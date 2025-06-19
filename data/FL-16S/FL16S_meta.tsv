@@ -1,0 +1,62 @@
+sample-id	Location	Name	Lab	Type	Cycles	Band
+#q2:types	categorical	categorical	categorical	categorical	numeric	categorical
+1	A1	L-003-06-INF-NPS	Kelly	Nasal Swab	25	Clean
+2	B1	L-003-08-INF-NPS	Kelly	Nasal Swab	25	Clean
+3	C1	L-003-10-INF-NPS	Kelly	Nasal Swab	25	Faint
+4	D1	L-003-12-INF-NPS	Kelly	Nasal Swab	25	Clean
+5	E1	L-004-01-INF-NPS	Kelly	Nasal Swab	25	Faint
+6	F1	L-004-02-INF-NPS	Kelly	Nasal Swab	25	Faint
+7	G1	L-004-03-INF-NPS	Kelly	Nasal Swab	25	Faint
+8	H1	L-004-04-INF-NPS	Kelly	Nasal Swab	25	Clean
+9	A2	L-011-06-INF-NPS	Kelly	Nasal Swab	25	Clean
+10	B2	L-011-08-INF-NPS	Kelly	Nasal Swab	25	Clean
+11	C2	L-011-10-INF-NPS	Kelly	Nasal Swab	25	Clean
+12	D2	L-011-12-INF-NPS	Kelly	Nasal Swab	25	Clean
+13	E2	L-012-01-INF-NPS	Kelly	Nasal Swab	25	Faint
+14	F2	L-012-02-INF-NPS	Kelly	Nasal Swab	25	Medium
+15	G2	L-012-03-INF-NPS	Kelly	Nasal Swab	25	Clean
+16	H2	L-012-04-INF-NPS	Kelly	Nasal Swab	25	Clean
+17	A3	L-012-05-INF-NPS	Kelly	Nasal Swab	25	Clean
+18	B3	L-012-06-INF-NPS	Kelly	Nasal Swab	25	Clean
+19	C3	L-012-08-INF-NPS	Kelly	Nasal Swab	25	Faint
+20	D3	L-012-10-INF-NPS	Kelly	Nasal Swab	25	Clean
+21	E3	L-014-02-INF-NPS	Kelly	Nasal Swab	25	Strong
+22	F3	L-014-03-INF-NPS	Kelly	Nasal Swab	25	Faint
+23	G3	L-014-04-INF-NPS	Kelly	Nasal Swab	25	Medium
+24	H3	L-014-05-INF-NPS	Kelly	Nasal Swab	25	Medium
+25	A4	L-016-02-INF-NPS	Kelly	Nasal Swab	25	Clean
+26	B4	L-016-03-INF-NPS	Kelly	Nasal Swab	25	Clean
+27	C4	L-016-04-INF-NPS	Kelly	Nasal Swab	25	Clean
+28	D4	L-016-05-INF-NPS	Kelly	Nasal Swab	25	Medium
+29	E4	L-017-06-INF-NPS	Kelly	Nasal Swab	25	Strong
+30	F4	L-017-08-INF-NPS	Kelly	Nasal Swab	25	Clean
+31	G4	L-017-10-INF-NPS	Kelly	Nasal Swab	25	Strong
+32	H4	L-017-12-INF-NPS	Kelly	Nasal Swab	25	Medium
+33	A5	L-019-03-INF-NPS	Kelly	Nasal Swab	25	Faint
+34	B5	L-019-04-INF-NPS	Kelly	Nasal Swab	25	Faint
+35	C5	L-019-05-INF-NPS	Kelly	Nasal Swab	25	Very Faint
+36	D5	L-019-06-INF-NPS	Kelly	Nasal Swab	25	Faint
+37	E5	L-019-08-INF-NPS	Kelly	Nasal Swab	25	Clean
+38	F5	L-020-01-INF-NPS	Kelly	Nasal Swab	25	Very Faint
+39	G5	L-020-02-INF-NPS	Kelly	Nasal Swab	25	Medium
+40	H5	L-020-03-INF-NPS	Kelly	Nasal Swab	25	Clean
+41	A6	L-020-04-INF-NPS	Kelly	Nasal Swab	25	Clean
+42	B6	L-023-03-INF-NPS	Kelly	Nasal Swab	25	Clean
+43	C6	L-023-04-INF-NPS	Kelly	Nasal Swab	25	Medium
+44	D6	L-023-05-INF-NPS	Kelly	Nasal Swab	25	Very Faint
+45	E6	L-026-06-INF-NPS	Kelly	Nasal Swab	25	Medium
+46	F6	L-026-08-INF-NPS	Kelly	Nasal Swab	25	Clean
+47	G6	L-026-10-INF-NPS	Kelly	Nasal Swab	25	Clean
+48	H6	L-026-12-INF-NPS	Kelly	Nasal Swab	25	Clean
+55	G7	NTC_25_1	Negative	NTC	25	No Band
+56	H7	NTC_25_2	Negative	NTC	25	No Band
+64	H8	NTC_25_3	Negative	NTC	25	No Band
+65	A9	NTC_25_4	Negative	NTC	25	No Band
+66	B9	NTC_25_5	Negative	NTC	25	No Band
+67	C9	NTC_25_6	Negative	NTC	25	No Band
+68	D9	NTC_25_7	Negative	NTC	25	No Band
+69	E9	PC_5	Zymo 5	Zymo	25	Strong
+70	F9	PC_1	Zymo 1	Zymo	25	Strong
+71	G9	PC_05	Zymo 0.5	Zymo	25	Strong
+72	H9	PC_005	Zymo 0.05	Zymo	25	Strong
+80	H10	NTC_30_1	Negative	NTC	30	No Band
