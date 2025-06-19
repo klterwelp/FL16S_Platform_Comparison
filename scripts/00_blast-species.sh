@@ -75,7 +75,7 @@ if [ ! -f "../references/NCBI_blast/16S_ribosomal_RNA.nto" ]; then
 fi
 # Activate the BLAST conda environment
 source activate blast
-export BLASTDB="../references/NCBI_blast/" 
+export BLASTDB="../references/NCBI_blast/" # location of NCBI taxdb database
 # make the output directory if it does not exist
 mkdir -p $OUT_FOL
 if [ ! -f $V1V3_BLAST_OUTPUT ]; then
