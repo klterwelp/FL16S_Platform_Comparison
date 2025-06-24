@@ -68,4 +68,3 @@ update_taxonomy "$MGX_TAX" "$MGX_OUT"
 rm "$NAMES" "$NAME2TAXID" "$LINEAGE"
 # Print completion message
 echo "Taxonomy update completed."
-

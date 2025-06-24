@@ -14,6 +14,9 @@
 #   - abs_ps_ls: list of amplicon phyloseq objects
 #   - rel_ps_ls: list of all phyloseq objects
 
+
+# Set up ------------------------------------------------------------------
+
 # load libraries
 library(tidyverse)
 library(phyloseq)
@@ -34,14 +37,31 @@ out_all_path <- file.path(out_path, "all_ps.RDS")
 out_amp_path <- file.path(out_path, "amp_ps.RDS")
 in_rds <- "intermediates/RDS"
 
-# STEP ONE: IMPORTING DATA FOR ALL THREE DATASETS
 
-mgx_ps <- readRDS(file.path(in_rds, "mgx.RDS"))
-v1v3_ps <- readRDS(file.path(in_rds, "v1v3.RDS"))
-fl_ps <- readRDS(file.path(in_rds, "fl.RDS"))
+# Functions ---------------------------------------------------------------
 
-# STEP TWO: COMBINE LAST TAXON IDENTIFIED WITH NEW LINEAGE FROM TAXONKIT
-
+#' Generate updated taxonomy table merged with last identified taxa
+#'
+#' @param last_tax_path the path to the TSV which has three columns: 
+#' `ASV`, `last_taxonomic_level`, `last_taxon_identified`, where `ASV` is the 
+#' ASV from the taxonomy table, `last_taxonomic_level` is the last non-NA rank
+#' for that ASV, and `last_taxon_identified` is the scientific name in that
+#' rank. This table was the input for the shell script that runs taxonkit to
+#' update the taxonomies. 
+#' @param lineage_path the path to the TSV output of the taxonkit shell script, 
+#' which has the following columns: `last_taxon_identified`, `ncbi_taxid`, 
+#' `last_taxonomic_level`, `full_lineage`, `ncbi_sciname`, `lineage`. 
+#' `last_taxon_identified` and `last_taxonomic_level` are used to merge this
+#' TSV with the `last_tax` table. `lineage` is the updated lineage that only
+#' contains Kingdom, Phylum, Class, Order, Family, Genus, and Species while 
+#' `full_lineage` includes the taxonomic ranks outside of these seven. 
+#'
+#' @returns `joined` table that combines the last identified taxa with the
+#' updated lineage information. It includes all of their columns, along with 
+#' `num_taxids_per_asv` which is the number of unique NCBI taxids associated 
+#' with each ASV and `missing_taxid` which is TRUE/FALSE depending on whether
+#' there's an NA for the `ncbi_taxid` column from the taxonkit script. 
+#'
 f_update_lineage <- function(last_tax_path, lineage_path) {
   # column format for updated taxonomy TSVs
   lineage_cols <- c("last_taxon_identified",
@@ -67,15 +87,15 @@ f_update_lineage <- function(last_tax_path, lineage_path) {
     ungroup()
   return(joined)
 }
-mgx_joined <- f_update_lineage(mgx_tax_path, mgx_lin_path)
-v1v3_joined <- f_update_lineage(v1v3_tax_path, v1v3_lin_path)
-fl_joined <- f_update_lineage(fl_tax_path, fl_lin_path)
 
-# STEP THREE: RECORD ASV NAMES THAT COULD NOT BE UPDATED
-
-# several taxa had no taxids according to taxonkit
-# for now we'll keep the lineage from the old taxonomy
-# we'll keep a record of ASVs that did not have updated taxonomy
+#' Create list of ASVs that could not be updated to current taxonomy
+#'
+#' @param joined_tbl the table generated from the `f_update_lineage` function. 
+#' Used to identify the ASVs that taxonkit could not find a matching NCBI 
+#' taxid. 
+#'
+#' @returns a list of ASVs that taxonkit could not find a matching NCBI taxid 
+#' for the last identified taxon. 
 f_no_update <- function(joined_tbl) {
   no_update_str <- joined_tbl %>%
     filter(is.na(ncbi_taxid)) %>%
@@ -83,30 +103,17 @@ f_no_update <- function(joined_tbl) {
     unique()
   return(no_update_str)
 }
-no_updated_taxonomy_asvs <- c(f_no_update(mgx_joined),
-                    f_no_update(v1v3_joined),
-                    f_no_update(fl_joined))
 
-write_tsv(x = as.data.frame(no_updated_taxonomy_asvs),
-          file = out_no_updates_path)
-
-# STEP FOUR: REMOVE TEXT AFTER ( TO REMOVE DUPLICATE SPECIES TAXID FOR MGX
-
-# one ASV in metagenomics has two NCBI taxids but they are the same species:
-# ex: Genus species (lit 2021) = Genus species (lit 2022)
-# removing the () will remove duplicate species (even with diff taxids)
-mgx_joined <- mgx_joined %>% 
-  mutate(Species = str_trim(str_remove(Species, "\\s*\\(.*"))) %>%
-  group_by(ASV) %>% 
-  mutate(num_species_per_ASV = length(unique(Species)))
-
-# STEP FIVE: UPDATE TAXONOMY TABLES
-
-# extract old taxonomy tables
-old_tax_v1v3 <- v1v3_ps@tax_table
-old_tax_fl <- fl_ps@tax_table
-old_tax_mgx <- mgx_ps@tax_table
-# update taxonomy if ncbi taxid was found, otherwise use old taxonomy
+#' Update phyloseq table taxonomy to newest NCBI taxonomy 
+#'
+#' @param old_table the taxonomy table from one of the phyloseq objects
+#' @param new_table the joined table generated from using taxonkit to
+#' identify the NCBI taxid (and its current taxonomy) associated with the last 
+#' identified taxon. Created with the `f_update_lineage` function. 
+#'
+#' @returns `old_table` the updated taxonomy table. All ASVs with non-NA NCBI
+#' taxids were updated with the current taxonomy. For the ASVs that had no 
+#' taxids (and therefore NA kingdom), the old taxonomy will be used. 
 f_update_taxonomy <- function(old_table, new_table) {
   new_table[new_table == "unknown"] <- NA # replace unknown with na
   # keep only relevant cols, removing duplicates
@@ -133,51 +140,42 @@ f_update_taxonomy <- function(old_table, new_table) {
   rownames(old_table) <- old_table$ASV
   as.matrix.data.frame(old_table) %>% tax_table() #convert to tax table
 }
-# update taxonomy to phyloseq objects
-new_tax_v1v3 <- f_update_taxonomy(old_tax_v1v3, v1v3_joined)
-new_tax_fl <- f_update_taxonomy(old_tax_fl, fl_joined)
-new_tax_mgx <- f_update_taxonomy(old_tax_mgx, mgx_joined)
+#' Update phyloseq object with new taxonomy table
+#'
+#' @param old_ps old phyloseq object used in the `f_update_taxonomy` function. 
+#' @param new_tax new taxonomy table generated with the `f_update_taxonomy` 
+#' function. 
+#' @returns `new_ps` the newly merged phyloseq object with `old_ps` otu table, 
+#' `old_ps` sample data, and the `new_tax` taxonomy table. 
 f_update_ps <- function(old_ps, new_tax) {
   new_ps <- merge_phyloseq(otu_table(old_ps),
                            sample_data(old_ps),
                            new_tax)
 }
-mgx_ps <- f_update_ps(mgx_ps, new_tax_mgx)
-fl_ps <- f_update_ps(fl_ps, new_tax_fl)
-v1v3_ps <- f_update_ps(v1v3_ps, new_tax_v1v3)
 
-# STEP SIX: EXPORT RELATIVE AND ABSOLUTE PHYLOSEQ LIST OBJECTS
-
-# add sample sums for full-length and V1-V3
-fl_ps <- fl_ps %>% microViz::ps_mutate(total_reads = sample_sums(fl_ps))
-v1v3_ps <- v1v3_ps %>% microViz::ps_mutate(total_reads = sample_sums(v1v3_ps))
-# save absolute abundance list
-if (!dir.exists(out_path)) {
-  dir.create(out_path)
-}
-abs_ps_ls <- list(fl_ps = fl_ps, v1v3_ps = v1v3_ps)
-saveRDS(abs_ps_ls, file = out_abs_path)
-# convert to relative abundance
+#' Convert feature to relative abundance
+#'
+#' @param x feature
+#'
+#' @returns `x` divided by the sum of all values of `x`
 f_rel_transform <- function(x) {
   x / sum(x)
 }
-fl_ps_rel <- transform_sample_counts(fl_ps, fun = f_rel_transform)
-v1v3_ps_rel <- transform_sample_counts(v1v3_ps, fun = f_rel_transform)
-rel_ps_ls <- list(fl_ps = fl_ps_rel, v1v3_ps = v1v3_ps_rel, mgx_ps = mgx_ps)
-saveRDS(rel_ps_ls, file = out_rel_path)
 
-# STEP SEVEN: MERGE PHYLOESQ OBJECTS TOGETHER
-
-# merge metadata
-f_add_metadata <- function(ls) {
+#' Merge metadata from phyloseq objects
+#'
+#' @param ls list of phyloseqs whose metadata will be combined. 
+#'
+#' @returns `sd_all` all metadata combined using `dplyr::bind_rows`. 
+f_add_metadata <- function(ps_ls) {
   keep_cols <- c("shrt_names", "old_name", "sample_dna", "shrt_sample_dna",
                  "database", "analysis", "total_reads")
   # extract sample data as tibbles
-  tib_ls <- lapply(ls, function(ps) {
-                                     sd <- sample_data(ps)
-                                     tib <- as_tibble(sd)
-                                     tib <- tib %>% select(any_of(keep_cols))
-                                     return(tib)})
+  tib_ls <- lapply(ps_ls, function(ps) {
+    sd <- sample_data(ps)
+    tib <- as_tibble(sd)
+    tib <- tib %>% select(any_of(keep_cols))
+    return(tib)})
   # bind all tibbles and convert back to sample data
   tib_all <- bind_rows(tib_ls)
   sd_all <- sample_data(tib_all)
@@ -185,10 +183,16 @@ f_add_metadata <- function(ls) {
   sd_all <- sample_data(sd_all)
   return(sd_all)
 }
-all_sdata <- f_add_metadata(rel_ps_ls)
-amp_sdata <- f_add_metadata(abs_ps_ls)
-# merge tax and otu tables
-merge_otu_or_tax <- function(ps_ls, otu_or_tax = "otu") {
+
+#' Merge otu tables or taxonomy tables
+#'
+#' @param ps_ls list of phyloseq objects whose otu or taxonomy tables will be
+#' combined. 
+#' @param otu_or_tax whether to combine the otu or taxonomy table. Accepts
+#' "otu" if combining otu tables or "tax" if combining taxonomy tables. 
+#'
+#' @returns `all_tables` a combined phyloseq table, either taxonomy or otu. 
+f_merge_otu_or_tax <- function(ps_ls, otu_or_tax = "otu") {
   if (otu_or_tax == "otu") {
     f_extract_table <- function(ps) {otu_table(ps)}
   } else {
@@ -201,10 +205,85 @@ merge_otu_or_tax <- function(ps_ls, otu_or_tax = "otu") {
   }
   return(all_tables)
 }
-all_otu <- merge_otu_or_tax(rel_ps_ls, otu_or_tax = "otu")
-amp_otu <- merge_otu_or_tax(abs_ps_ls, otu_or_tax = "otu")
-all_tax <- merge_otu_or_tax(rel_ps_ls, otu_or_tax = "tax")
-amp_tax <- merge_otu_or_tax(abs_ps_ls, otu_or_tax = "tax")
+
+# Step One: Importing data ------------------------------------------------
+
+mgx_ps <- readRDS(file.path(in_rds, "mgx.RDS"))
+v1v3_ps <- readRDS(file.path(in_rds, "v1v3.RDS"))
+fl_ps <- readRDS(file.path(in_rds, "fl.RDS"))
+
+# Step Two: Generate updated lineage tables -------------------------------
+
+mgx_joined <- f_update_lineage(mgx_tax_path, mgx_lin_path)
+v1v3_joined <- f_update_lineage(v1v3_tax_path, v1v3_lin_path)
+fl_joined <- f_update_lineage(fl_tax_path, fl_lin_path)
+
+# Step Three: Record ASVs with no associated NCBI taxid -------------------
+
+# several taxa had no taxids according to taxonkit
+# we'll keep a record of ASVs that cannot have updated taxonomy
+no_updated_taxonomy_asvs <- c(f_no_update(mgx_joined),
+                    f_no_update(v1v3_joined),
+                    f_no_update(fl_joined))
+
+write_tsv(x = as.data.frame(no_updated_taxonomy_asvs),
+          file = out_no_updates_path)
+
+
+# Step Four: Trim ( off of metagenomics Species ---------------------------
+
+# one ASV in metagenomics has two NCBI taxids but they are the same species:
+# ex: Genus species (lit 2021) = Genus species (lit 2022)
+# removing the () will allow them to be merged
+mgx_joined <- mgx_joined %>% 
+  mutate(Species = str_trim(str_remove(Species, "\\s*\\(.*"))) %>%
+  group_by(ASV) %>% 
+  mutate(num_species_per_ASV = length(unique(Species)))
+
+# Step Five: Update taxonomy tables ---------------------------------------
+
+# extract old taxonomy tables
+old_tax_v1v3 <- v1v3_ps@tax_table
+old_tax_fl <- fl_ps@tax_table
+old_tax_mgx <- mgx_ps@tax_table
+# update taxonomy if ncbi taxid was found, otherwise use old taxonomy
+new_tax_v1v3 <- f_update_taxonomy(old_tax_v1v3, v1v3_joined)
+new_tax_fl <- f_update_taxonomy(old_tax_fl, fl_joined)
+new_tax_mgx <- f_update_taxonomy(old_tax_mgx, mgx_joined)
+# add new taxonomy table to phyloseq object
+mgx_ps <- f_update_ps(mgx_ps, new_tax_mgx)
+fl_ps <- f_update_ps(fl_ps, new_tax_fl)
+v1v3_ps <- f_update_ps(v1v3_ps, new_tax_v1v3)
+
+# Step Six: Export relative and absolute phyloseq lists -------------------
+
+# add sample sums for full-length and V1-V3
+fl_ps <- fl_ps %>% microViz::ps_mutate(total_reads = sample_sums(fl_ps))
+v1v3_ps <- v1v3_ps %>% microViz::ps_mutate(total_reads = sample_sums(v1v3_ps))
+# make out directory if it doesn't exist
+if (!dir.exists(out_path)) {
+  dir.create(out_path)
+}
+# save absolute abundance list
+abs_ps_ls <- list(fl_ps = fl_ps, v1v3_ps = v1v3_ps)
+saveRDS(abs_ps_ls, file = out_abs_path)
+# convert to relative abundance
+fl_ps_rel <- transform_sample_counts(fl_ps, fun = f_rel_transform)
+v1v3_ps_rel <- transform_sample_counts(v1v3_ps, fun = f_rel_transform)
+rel_ps_ls <- list(fl_ps = fl_ps_rel, v1v3_ps = v1v3_ps_rel, mgx_ps = mgx_ps)
+# save relative abundance phyloseq list
+saveRDS(rel_ps_ls, file = out_rel_path)
+
+# Step Seven: Merge phyloseq objects and export ---------------------------
+
+# merge metadata
+all_sdata <- f_add_metadata(rel_ps_ls)
+amp_sdata <- f_add_metadata(abs_ps_ls)
+# merge tax and otu tables
+all_otu <- f_merge_otu_or_tax(rel_ps_ls, otu_or_tax = "otu")
+amp_otu <- f_merge_otu_or_tax(abs_ps_ls, otu_or_tax = "otu")
+all_tax <- f_merge_otu_or_tax(rel_ps_ls, otu_or_tax = "tax")
+amp_tax <- f_merge_otu_or_tax(abs_ps_ls, otu_or_tax = "tax")
 # merge phyloseq objects
 all_ps <- merge_phyloseq(all_tax, all_otu, all_sdata)
 amp_ps <- merge_phyloseq(amp_tax, amp_otu, amp_sdata)
