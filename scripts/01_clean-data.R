@@ -57,7 +57,7 @@ out_v1v3 <- file.path(out_path, "v1v3.RDS")
 #'
 #' @param sample_names the sample names of the phyloseq object
 #'
-#' @returns `sample_dna` the sample dna metadata column that is the 
+#' @returns `sample_dna` the sample dna metadata column that is the
 #' unified sample names across all three datasets
 f_sample_dna <- function(sample_names) {
   sample_names %>%
@@ -67,11 +67,11 @@ f_sample_dna <- function(sample_names) {
 
 #' Shorten sample names and potentially add analysis suffix
 #'
-#' @param sample_names the sample names of the phyloseq object 
+#' @param sample_names the sample names of the phyloseq object
 #' @param suffix the suffix to indicate the analysis type (mgx, v1v3, fl)
 #'
-#' @returns `sample_names` updated to be shorter and to optionally contain the 
-#' analysis suffix. 
+#' @returns `sample_names` updated to be shorter and to optionally contain the
+#' analysis suffix.
 f_shrt_names <- function(sample_names, suffix) {
   sample_names %>%
     str_replace_all("\\-", "\\.") %>% # replaces "-" with "."
@@ -86,7 +86,7 @@ f_shrt_names <- function(sample_names, suffix) {
 #'
 #' @param tax HOMD taxonomy with only "species" name in the Species column.
 #'
-#' @returns `tax` HOMD taxonomy with the Species column updated to 
+#' @returns `tax` HOMD taxonomy with the Species column updated to
 #' "Genus species"
 f_add_genus <- function(tax) {
   # only add Genus to assigned species
@@ -120,10 +120,10 @@ f_replace_unknwn <- function(tax) {
 #'
 #' @param blast_tbl the imported blast results from 00_blast-species.sh
 #'
-#' @returns `blast_tbl` that's been filtered to only contain matches per ASV 
-#' that have the maximum bitscore for that ASV. Adds the `consensus_species` 
-#' column which is NA if there's more than one species with a top bitscore for 
-#' that ASV or is the scientific name of the species with the top bitscore. 
+#' @returns `blast_tbl` that's been filtered to only contain matches per ASV
+#' that have the maximum bitscore for that ASV. Adds the `consensus_species`
+#' column which is NA if there's more than one species with a top bitscore for
+#' that ASV or is the scientific name of the species with the top bitscore.
 f_shrtn_hits <- function(blast_tbl) {
   blast_tbl %>%
     dplyr::group_by(query_asv) %>%
@@ -144,10 +144,10 @@ f_shrtn_hits <- function(blast_tbl) {
 #'
 #' @param tax_table phyloseq taxonomy table
 #'
-#' @returns `tax_table` with Species replaced with BLAST `consensus_species` 
+#' @returns `tax_table` with Species replaced with BLAST `consensus_species`
 #' from the `f_shrtn_hits` function. Adds a `HOMD_Species` column that contains
 #' the HOMD classifier species. Also adds a `ASV` column which contains the ASV
-#' name from the rownames of the phyloseq object.  
+#' name from the rownames of the phyloseq object.
 f_replace_blast_species <- function(tax_table) {
   tax_table_ranks <- colnames(tax_table) # save table ranks
   tax_table <- tax_table %>% tax_mutate(HOMD_Species = Species) # add HOMD col
@@ -170,12 +170,12 @@ f_replace_blast_species <- function(tax_table) {
 #' @param taxon_row taxonomy table row from phyloseq taxonomy table
 #' @param ranks ranks of the current phyloseq taxonomy table
 #'
-#' @returns A list of `last_value` and `last_col`, where `last_value` is the 
+#' @returns A list of `last_value` and `last_col`, where `last_value` is the
 #' taxon name of the last non-NA cell and `last_col` is the rank of the last
-#' identified taxon. 
+#' identified taxon.
 get_last_ided <- function(taxon_row, ranks) {
   tax_levels <- taxon_row
-  non_empty_idx <- which(tax_levels != "" & !is.na(tax_levels)) 
+  non_empty_idx <- which(tax_levels != "" & !is.na(tax_levels))
   if (length(non_empty_idx) == 0) {
     return(list(last_value = NA, last_col = NA))
   } else {
@@ -191,26 +191,26 @@ get_last_ided <- function(taxon_row, ranks) {
 #' @param tax_table taxonomy table from phyloseq object
 #' @param out_file TSV path to write final table
 #'
-#' @returns `out_file` TSV file used in 02_update_taxonomy.sh with the 
+#' @returns `out_file` TSV file used in 02_update_taxonomy.sh with the
 #' following columns: `ASV`, `last_taxonomic_level`, and
 #' `last_taxon_identified`. `last_taxonomic_level` is the last identified rank
-#' for a given `ASV` while `last_taxon_identified` is the scientific name of 
-#' the last identified (not NA) taxon for that `ASV`. 
+#' for a given `ASV` while `last_taxon_identified` is the scientific name of
+#' the last identified (not NA) taxon for that `ASV`.
 f_write_last_tax <- function(tax_table, out_file) {
   ranks <- rank_names(tax_table)[1:7] # extract taxonomic ranks King-Species
   tax_df <- as.data.frame(tax_table, stringsAsFactors = FALSE)
   # removes anything after _ for taxons
   tax_df <- tax_df %>%
     select(-HOMD_Species) %>%
-    mutate(across(where(is.character), ~ sub("_.*", "", .))) %>% 
+    mutate(across(where(is.character), ~ sub("_.*", "", .))) %>%
     rowwise() %>%
     mutate(last_info = list(get_last_ided(c_across(all_of(ranks)), ranks))) %>%
     transmute(
       ASV = ASV,
       last_taxonomic_level = last_info$last_col,
       last_taxon_identified = last_info$last_value
-    ) %>% 
-    ungroup() 
+    ) %>%
+    ungroup()
   write_tsv(tax_df, file = out_file, na = "")
 }
 
@@ -328,7 +328,7 @@ mgx_ps@tax_table <- f_replace_blast_species(mgx_ps@tax_table)
 
 # Step Five: Export phyloseq objects --------------------------------------
 
-# save absolute abundance list 
+# save absolute abundance list
 if (!dir.exists(out_path)) {
   dir.create(out_path)
 }

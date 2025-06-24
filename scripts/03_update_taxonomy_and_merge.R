@@ -1,5 +1,5 @@
 # uses 02_update_taxonomy.sh results to update to current (6/2025) NCBI Taxonomy
-# then creates merged versions of the phyloseq objects 
+# then creates merged versions of the phyloseq objects
 # Inputs:
 # intermediates/TSV/
 #   - mgx_last_tax.tsv: ASV, name of last taxon identified, and its rank
@@ -42,25 +42,25 @@ in_rds <- "intermediates/RDS"
 
 #' Generate updated taxonomy table merged with last identified taxa
 #'
-#' @param last_tax_path the path to the TSV which has three columns: 
-#' `ASV`, `last_taxonomic_level`, `last_taxon_identified`, where `ASV` is the 
+#' @param last_tax_path the path to the TSV which has three columns:
+#' `ASV`, `last_taxonomic_level`, `last_taxon_identified`, where `ASV` is the
 #' ASV from the taxonomy table, `last_taxonomic_level` is the last non-NA rank
 #' for that ASV, and `last_taxon_identified` is the scientific name in that
 #' rank. This table was the input for the shell script that runs taxonkit to
-#' update the taxonomies. 
-#' @param lineage_path the path to the TSV output of the taxonkit shell script, 
-#' which has the following columns: `last_taxon_identified`, `ncbi_taxid`, 
-#' `last_taxonomic_level`, `full_lineage`, `ncbi_sciname`, `lineage`. 
+#' update the taxonomies.
+#' @param lineage_path the path to the TSV output of the taxonkit shell script,
+#' which has the following columns: `last_taxon_identified`, `ncbi_taxid`,
+#' `last_taxonomic_level`, `full_lineage`, `ncbi_sciname`, `lineage`.
 #' `last_taxon_identified` and `last_taxonomic_level` are used to merge this
 #' TSV with the `last_tax` table. `lineage` is the updated lineage that only
-#' contains Kingdom, Phylum, Class, Order, Family, Genus, and Species while 
-#' `full_lineage` includes the taxonomic ranks outside of these seven. 
+#' contains Kingdom, Phylum, Class, Order, Family, Genus, and Species while
+#' `full_lineage` includes the taxonomic ranks outside of these seven.
 #'
 #' @returns `joined` table that combines the last identified taxa with the
-#' updated lineage information. It includes all of their columns, along with 
-#' `num_taxids_per_asv` which is the number of unique NCBI taxids associated 
+#' updated lineage information. It includes all of their columns, along with
+#' `num_taxids_per_asv` which is the number of unique NCBI taxids associated
 #' with each ASV and `missing_taxid` which is TRUE/FALSE depending on whether
-#' there's an NA for the `ncbi_taxid` column from the taxonkit script. 
+#' there's an NA for the `ncbi_taxid` column from the taxonkit script.
 #'
 f_update_lineage <- function(last_tax_path, lineage_path) {
   # column format for updated taxonomy TSVs
@@ -90,11 +90,11 @@ f_update_lineage <- function(last_tax_path, lineage_path) {
 
 #' Create list of ASVs that could not be updated to current taxonomy
 #'
-#' @param joined_tbl the table generated from the `f_update_lineage` function. 
-#' Used to identify the ASVs that taxonkit could not find a matching NCBI 
-#' taxid. 
+#' @param joined_tbl the table generated from the `f_update_lineage` function.
+#' Used to identify the ASVs that taxonkit could not find a matching NCBI
+#' taxid.
 #'
-#' @returns a list of ASVs that taxonkit could not find a matching NCBI taxid 
+#' @returns a list of ASVs that taxonkit could not find a matching NCBI taxid
 #' for the last identified taxon. 
 f_no_update <- function(joined_tbl) {
   no_update_str <- joined_tbl %>%
@@ -104,20 +104,20 @@ f_no_update <- function(joined_tbl) {
   return(no_update_str)
 }
 
-#' Update phyloseq table taxonomy to newest NCBI taxonomy 
+#' Update phyloseq table taxonomy to newest NCBI taxonomy
 #'
 #' @param old_table the taxonomy table from one of the phyloseq objects
 #' @param new_table the joined table generated from using taxonkit to
-#' identify the NCBI taxid (and its current taxonomy) associated with the last 
-#' identified taxon. Created with the `f_update_lineage` function. 
+#' identify the NCBI taxid (and its current taxonomy) associated with the last
+#' identified taxon. Created with the `f_update_lineage` function.
 #'
 #' @returns `old_table` the updated taxonomy table. All ASVs with non-NA NCBI
-#' taxids were updated with the current taxonomy. For the ASVs that had no 
-#' taxids (and therefore NA kingdom), the old taxonomy will be used. 
+#' taxids were updated with the current taxonomy. For the ASVs that had no
+#' taxids (and therefore NA kingdom), the old taxonomy will be used.
 f_update_taxonomy <- function(old_table, new_table) {
   new_table[new_table == "unknown"] <- NA # replace unknown with na
   # keep only relevant cols, removing duplicates
-  new_table <- new_table %>% 
+  new_table <- new_table %>%
     select(c("Kingdom",	"Phylum",	"Class",	"Order",
              "Family",	"Genus",	"Species", "ASV")) %>%
     distinct()
@@ -142,11 +142,11 @@ f_update_taxonomy <- function(old_table, new_table) {
 }
 #' Update phyloseq object with new taxonomy table
 #'
-#' @param old_ps old phyloseq object used in the `f_update_taxonomy` function. 
-#' @param new_tax new taxonomy table generated with the `f_update_taxonomy` 
-#' function. 
-#' @returns `new_ps` the newly merged phyloseq object with `old_ps` otu table, 
-#' `old_ps` sample data, and the `new_tax` taxonomy table. 
+#' @param old_ps old phyloseq object used in the `f_update_taxonomy` function.
+#' @param new_tax new taxonomy table generated with the `f_update_taxonomy`
+#' function.
+#' @returns `new_ps` the newly merged phyloseq object with `old_ps` otu table,
+#' `old_ps` sample data, and the `new_tax` taxonomy table.
 f_update_ps <- function(old_ps, new_tax) {
   new_ps <- merge_phyloseq(otu_table(old_ps),
                            sample_data(old_ps),
@@ -164,9 +164,9 @@ f_rel_transform <- function(x) {
 
 #' Merge metadata from phyloseq objects
 #'
-#' @param ls list of phyloseqs whose metadata will be combined. 
+#' @param ls list of phyloseqs whose metadata will be combined.
 #'
-#' @returns `sd_all` all metadata combined using `dplyr::bind_rows`. 
+#' @returns `sd_all` all metadata combined using `dplyr::bind_rows`.
 f_add_metadata <- function(ps_ls) {
   keep_cols <- c("shrt_names", "old_name", "sample_dna", "shrt_sample_dna",
                  "database", "analysis", "total_reads")
@@ -174,8 +174,10 @@ f_add_metadata <- function(ps_ls) {
   tib_ls <- lapply(ps_ls, function(ps) {
     sd <- sample_data(ps)
     tib <- as_tibble(sd)
-    tib <- tib %>% select(any_of(keep_cols))
-    return(tib)})
+    tib <- tib %>%
+      select(any_of(keep_cols))
+    return(tib)
+  })
   # bind all tibbles and convert back to sample data
   tib_all <- bind_rows(tib_ls)
   sd_all <- sample_data(tib_all)
@@ -187,16 +189,20 @@ f_add_metadata <- function(ps_ls) {
 #' Merge otu tables or taxonomy tables
 #'
 #' @param ps_ls list of phyloseq objects whose otu or taxonomy tables will be
-#' combined. 
+#' combined.
 #' @param otu_or_tax whether to combine the otu or taxonomy table. Accepts
-#' "otu" if combining otu tables or "tax" if combining taxonomy tables. 
+#' "otu" if combining otu tables or "tax" if combining taxonomy tables.
 #'
-#' @returns `all_tables` a combined phyloseq table, either taxonomy or otu. 
+#' @returns `all_tables` a combined phyloseq table, either taxonomy or otu.
 f_merge_otu_or_tax <- function(ps_ls, otu_or_tax = "otu") {
   if (otu_or_tax == "otu") {
-    f_extract_table <- function(ps) {otu_table(ps)}
+    f_extract_table <- function(ps) {
+      otu_table(ps)
+    }
   } else {
-    f_extract_table <- function(ps) {tax_table(ps)}
+    f_extract_table <- function(ps) {
+      tax_table(ps)
+    }
   }
   table_ls <- lapply(ps_ls, f_extract_table)
   all_tables <- ""
@@ -223,8 +229,8 @@ fl_joined <- f_update_lineage(fl_tax_path, fl_lin_path)
 # several taxa had no taxids according to taxonkit
 # we'll keep a record of ASVs that cannot have updated taxonomy
 no_updated_taxonomy_asvs <- c(f_no_update(mgx_joined),
-                    f_no_update(v1v3_joined),
-                    f_no_update(fl_joined))
+                              f_no_update(v1v3_joined),
+                              f_no_update(fl_joined))
 
 write_tsv(x = as.data.frame(no_updated_taxonomy_asvs),
           file = out_no_updates_path)
@@ -235,9 +241,9 @@ write_tsv(x = as.data.frame(no_updated_taxonomy_asvs),
 # one ASV in metagenomics has two NCBI taxids but they are the same species:
 # ex: Genus species (lit 2021) = Genus species (lit 2022)
 # removing the () will allow them to be merged
-mgx_joined <- mgx_joined %>% 
+mgx_joined <- mgx_joined %>%
   mutate(Species = str_trim(str_remove(Species, "\\s*\\(.*"))) %>%
-  group_by(ASV) %>% 
+  group_by(ASV) %>%
   mutate(num_species_per_ASV = length(unique(Species)))
 
 # Step Five: Update taxonomy tables ---------------------------------------
