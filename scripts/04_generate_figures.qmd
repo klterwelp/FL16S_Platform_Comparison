@@ -1,0 +1,387 @@
+---
+title: "generate_figures"
+format: html
+editor: visual
+---
+
+## Generate Figures
+
+### Metagenomics, FL-16S, and 16S V1-V3 Comparison
+
+**Set Up:**
+
+```{r}
+# load libraries
+library(tidyverse) # work with tibbles etc
+library(phyloseq) # work with phyloseq objects
+library(microViz) # useful package for visualizations
+library(vegan) # for calculating rarecurve
+library(miryln) # for calculating iterations of repeat rarefactions
+
+# set file paths
+in_path <- "../intermediates/RDS"
+all_ps_path <- file.path(in_path, "all_ps.RDS")
+out_path <- "../figures"
+
+# set theme 
+theme_set(theme_bw()) # slightly clearer axes for facets
+
+# functions
+# all_ps is relative but we can transform it back into counts using the total_counts
+f_relative_to_counts <- function(ps_rel) {
+  total_reads <- sample_data(ps_rel)$total_reads
+  otu_rel <- as(otu_table(ps_rel), "matrix") # extract matrix otu table
+  otu_counts <- sweep(otu_rel, 2, total_reads, `*`) # multiply rel abundance otu by read count
+  otu_counts <- otu_counts %>% round() # round to keep whole numbers (@ mgx data)
+  otu_table(ps_rel) <- otu_table(otu_counts, taxa_are_rows = taxa_are_rows(ps_rel))
+  return(ps_rel)
+}
+
+# function to set up phyloseq object for plots
+f_plot_prep_phyloseq <- function(ps, min_prev=2, counts=FALSE, tax_select=1:7, rank="Species",
+                                 min_abundance=0) {
+  # filter out rare taxa by prevalence
+  new_ps <- ps %>% 
+  tax_filter(min_prevalence = min_prev, use_counts = counts, undetected = 0,
+             min_sample_abundance = min_abundance) 
+  # remove taxonomy columns not used by plot 
+  new_ps@tax_table <- new_ps@tax_table[,tax_select]
+  # use tax_fix from microViz to set up unknowns as Last Taxa Rank (ex: Streptococcus Genus)
+  new_ps <- new_ps %>%
+    tax_fix( 
+      min_length = 1,
+      unknowns = NA,
+      sep = " ", 
+      anon_unique = TRUE,
+      suffix_rank = "classified") %>% 
+    tax_agg(rank = rank, force = TRUE) # ignores convergent taxa (ie; conflicts from non-updated taxonomy)
+}
+
+# function to create merged summary barplots (merged by analysis)
+f_merged_barplot <- function(ps, rank = "Species", bar_width = 0.9, bar_outline = NA, 
+                             n_taxa = 2, color_pallete = NA, xlabel, ylabel, 
+                             fill_label, text_size = 8, sample_order = "asis") {
+  if (length(color_pallete) == 1) {
+    color_pallete <- distinct_palette(n_taxa)
+    taxa_order = sum
+  } else {
+    taxa_order = names(color_pallete)
+  }
+  ps %>% 
+  phyloseq::merge_samples(group = "analysis") %>%
+  comp_barplot(tax_level = rank,
+               n_taxa = n_taxa, 
+               bar_outline_colour = bar_outline,
+               bar_width = bar_width,
+               sample_order = sample_order,
+               palette = color_pallete,
+               tax_order = taxa_order) +
+    labs(x = ylabel, y = xlabel, fill = fill_label) + # update labels
+    coord_flip() + # flix axis so barplots are horizontal
+    scale_x_discrete(labels = analysis_labs) + # set analysis labels 
+    theme(text = element_text(size = text_size),
+          panel.spacing.x = unit(3, "mm"), # better spacing
+          panel.background = element_blank(), # removes background color
+          panel.grid = element_blank(), # removes background grid
+          panel.border = element_blank(), # removes border
+          axis.ticks.y = element_blank() # remove y axis ticks
+         ) 
+}
+f_barplot_by_samples <- function(ps, rank = "Species", bar_width = 0.9, bar_outline = NA, 
+                             n_taxa = 2, color_pallete = NA, xlabel, ylabel, 
+                             fill_label, text_size = 8, sample_order = "asis") {
+  if (length(color_pallete) == 1) {
+    color_pallete <- distinct_palette(n_taxa)
+    taxa_order = sum
+  } else {
+    taxa_order = names(color_pallete)
+  }
+  ps %>% 
+    comp_barplot(tax_level = rank,
+                 x = "shrt_sample_dna",
+                 n_taxa = n_taxa, 
+                 bar_outline_colour = bar_outline,
+                 bar_width = bar_width,
+                 sample_order = sample_order,
+                 palette = color_pallete,
+                 tax_order = taxa_order) +
+    labs(x = xlabel, y = ylabel, fill = fill_label) + # update labels
+    facet_wrap(facets = vars(analysis), 
+               scales = "fixed", 
+               labeller = labeller(analysis = analysis_labs)) +
+    coord_flip() + 
+    theme(text = element_text(size = text_size),
+          panel.spacing.x = unit(3, "mm"), # better spacing
+          panel.background = element_blank(), # removes background color
+          panel.grid = element_blank(), # removes background grid
+          panel.border = element_blank(), # removes border
+          strip.background = element_rect(colour=NA, fill="grey90"), # facet labels grey
+          axis.text.y = element_blank(), # remove y axis text 
+          axis.ticks.y = element_blank(), # remove y axis ticks
+          axis.text.x = element_text(angle = 90, vjust = 0.7, hjust = 0.2) # rotate text
+         ) 
+}
+# export plot 
+f_export_plot <- function(plot, out_file, width = 8, height = 4, dpi = 300) {
+  # make figures folder if doesn't exist
+  if (!dir.exists("../figures")) {
+    dir.create("../figures")
+  }
+  # create full output path
+  out_path <- file.path("../figures/", out_file)
+  ggsave(out_path, plot = plot, width = width, height = height, dpi = dpi)
+}
+```
+
+```{r}
+# import data
+all_ps <- readRDS(all_ps_path)
+
+# set up analysis variable
+all_ps <- all_ps %>% ps_mutate(analysis = factor(analysis, levels = c("MGX", "FL-16S", "V1-V3")))
+analysis_labs <- c("V1-V3", "FL-16S", "Metagenomics")
+names(analysis_labs) <- c("V1-V3", "FL-16S", "MGX")
+
+# generate pseudo-counts data using total_reads 
+all_ps_count <- f_relative_to_counts(all_ps)
+```
+
+**Taxonomy Updates - Are Non-Updated Taxa Rare or Significant Members?**
+
+```{r}
+# generate plot phyloseqs
+updated_ps <- f_plot_prep_phyloseq(all_ps, 
+                                    min_prev = 1, 
+                                    counts = FALSE,
+                                    tax_select = 10, 
+                                    rank = "Updated")
+updated_ps_filt_2 <- f_plot_prep_phyloseq(all_ps, 
+                                    min_prev = 2, # keep only taxa seen in 2 samples 
+                                    counts = FALSE,
+                                    tax_select = 10, 
+                                    rank = "Updated")
+
+updated_ps_filt_4 <- f_plot_prep_phyloseq(all_ps, 
+                                    min_prev = 4, # keep only taxa seen in 4 samples 
+                                    counts = FALSE,
+                                    tax_select = 10, 
+                                    rank = "Updated")
+
+# merged barplot by analysis
+updated_ps %>% f_merged_barplot(rank = "Updated", 
+                                xlabel = "Relative Abundance", 
+                                ylabel = "Platform", 
+                                fill_label = "Updated Taxonomy")
+f_export_plot(plot = last_plot(), out_file = "updated_taxonomy_merged_barplot.png")
+# barplot with samples faceted by analysis 
+updated_ps %>% f_barplot_by_samples(rank = "Updated",
+                                    n_taxa = 2, 
+                                    xlabel = "Samples", 
+                                    ylabel = "Relative Abundance", 
+                                    fill_label = "Updated Taxonomy")
+f_export_plot(plot = last_plot(), out_file = "updated_taxonomy_barplot.png")
+
+# repeat with filtering
+updated_ps_filt_2 %>% f_barplot_by_samples(rank = "Updated",
+                                    n_taxa = 2, 
+                                    xlabel = "Samples", 
+                                    ylabel = "Relative Abundance", 
+                                    fill_label = "Updated Taxonomy")
+f_export_plot(plot = last_plot(), out_file = "updated_taxonomy_barplot_filt2.png")
+
+
+updated_ps_filt_4 %>% f_barplot_by_samples(rank = "Updated",
+                                    n_taxa = 2, 
+                                    xlabel = "Samples", 
+                                    ylabel = "Relative Abundance", 
+                                    fill_label = "Updated Taxonomy")
+f_export_plot(plot = last_plot(), out_file = "updated_taxonomy_barplot_filt4.png")
+
+
+# more filtering exasperates the issue for metagenomics
+```
+
+```{r}
+# barplot at species level 
+# set graph variables
+num_taxa <- 15
+num_taxa_barplot <- 12
+num_genus <- 7
+
+# generate plot phyloseqs
+species_ps <- f_plot_prep_phyloseq(all_ps, 
+                                    min_prev = 1, 
+                                    counts = FALSE,
+                                    tax_select = 1:7, # Kingdom-Species
+                                    rank = "Species")
+species_ps_filt2 <- f_plot_prep_phyloseq(all_ps, 
+                                    min_prev = 2, # keep only taxa seen in 2 samples 
+                                    counts = FALSE,
+                                    tax_select = 1:7, # Kingdom-Species
+                                    rank = "Species")
+
+species_ps_filt4 <- f_plot_prep_phyloseq(all_ps, 
+                                    min_prev = 4, # keep only taxa seen in 4 samples 
+                                    counts = FALSE,
+                                    tax_select = 1:7, # Kingdom-Species
+                                    rank = "Species")
+
+genus_ps <- f_plot_prep_phyloseq(all_ps, 
+                                 min_prev = 1,
+                                 counts = FALSE, 
+                                 tax_select = 1:7, # Kingdom-Species, 
+                                 rank = "Genus")
+
+# colors for barplots
+colors_species <- species_ps %>% 
+  tax_palette(rank = "Species", n = num_taxa, add = NA)
+names(colors_species) <- sort(names(colors_species))
+colors_species["Other"] <- "grey90"
+
+colors_genus <- genus_ps %>% 
+  tax_palette(rank = "Genus", n = num_genus, add = NA)
+names(colors_genus) <- sort(names(colors_genus))
+colors_genus["Other"] <- "grey90"
+
+f_barplot_by_samples(species_ps, rank = "Species", n_taxa = num_taxa_barplot, 
+                     color_pallete = colors_species, xlabel = "Sample", 
+                     ylabel = "Relative Abundance", fill_label = "Species", text_size = 10)
+file_name <- paste0("top-", num_taxa_barplot, "_species_taxonomy_barplot.png")
+f_export_plot(plot = last_plot(), out_file = file_name)
+
+f_barplot_by_samples(species_ps_filt2, rank = "Species", n_taxa = num_taxa_barplot, 
+                     color_pallete = colors_species, xlabel = "Sample", 
+                     ylabel = "Relative Abundance", fill_label = "Species", text_size = 10)
+file_name <- paste0("top-", num_taxa_barplot, "_species_taxonomy_barplot_filt2.png")
+f_export_plot(plot = last_plot(), out_file = file_name)
+
+f_barplot_by_samples(species_ps_filt4, rank = "Species", n_taxa = num_taxa_barplot, 
+                     color_pallete = colors_species, xlabel = "Sample", 
+                     ylabel = "Relative Abundance", fill_label = "Species", text_size = 10)
+file_name <- paste0("top-", num_taxa_barplot, "_species_taxonomy_barplot_filt4.png")
+f_export_plot(plot = last_plot(), out_file = file_name)
+
+f_merged_barplot(species_ps, rank = "Species", n_taxa = num_taxa, color_pallete = colors_species, xlabel = "Relative Abundance", ylabel = "Platform", fill_label = "Species")
+file_name <- paste0("top-", num_taxa, "_species_merged_taxonomy_barplot.png")
+f_export_plot(plot = last_plot(), out_file = file_name)
+
+f_barplot_by_samples(genus_ps, rank = "Genus", n_taxa = num_genus, 
+                     color_pallete = colors_genus, xlabel = "Sample", 
+                     ylabel = "Relative Abundance", fill_label = "Genus", text_size = 10)
+file_name <- paste0("top-", num_genus, "_genus_taxonomy_barplot.png")
+f_export_plot(plot = last_plot(), out_file = file_name)
+```
+
+```{r}
+# function to add side panels 
+add_side_panels <- function(plot, variable) {
+  plot <- plot + 
+  ggside::geom_xsideboxplot(aes(y = !!sym(variable), fill = !!sym(variable)), orientation = "y") +
+  ggside::geom_ysideboxplot(aes(x = !!sym(variable), fill = !!sym(variable)), orientation = "x") +
+  ggside::scale_xsidey_discrete(labels = NULL) +
+  ggside::scale_ysidex_discrete(labels = NULL) +
+  ggside::theme_ggside_void()
+}
+
+# function to plot ordination plots and
+f_plot_ordination_plots <- function(ps, min_prev = 1, counts = FALSE, tax_select = 1:7, 
+                                    rank = "Species", min_abundance = 0, side_panels=FALSE,
+                                    variable = "analysis", dist = "bray", plot_scree=FALSE,
+                                    dot_size = 2, palette = "Dark2") {
+  # prepare plot phyloseq object 
+  plot_ps <- f_plot_prep_phyloseq(ps, 
+                                  min_prev = min_prev, 
+                                  counts = counts,
+                                  tax_select = tax_select, 
+                                  rank = rank,
+                                  min_abundance)
+  # set binary var
+  if (dist == "jaccard") {
+    bin = TRUE
+  } else {
+    bin = FALSE
+  }
+  # prepare ordination and PcoA
+  ordination <- plot_ps %>% dist_calc(dist, binary = bin) %>% ord_calc("PCoA")
+  
+  # save scree plot if true 
+  if (plot_scree == TRUE) {
+    scree_plot <- ordination %>% 
+      ord_get() %>% 
+      phyloseq::plot_scree() + theme(axis.text.x = element_text(size = 8))
+    scree_name <- paste("scree", dist, rank, min_prev, min_abundance, "plot.png", sep = "_")
+    f_export_plot(scree_plot, scree_name)
+    print(scree_plot)
+  }
+  
+  plot <- ordination %>% 
+    ord_plot(color = variable, size = dot_size) +
+    scale_colour_brewer(palette = palette, aesthetics = c("fill", "colour")) 
+  
+  if (side_panels == TRUE) {
+    plot <- add_side_panels(plot, variable)
+    panels <- "panels"
+  } else {
+    panels <- ""
+  }
+  
+  # export plot with named variables 
+  print(plot)
+  plot_name <- paste("pcoa", dist, rank, min_prev, min_abundance, panels, "plot.png", sep = "_")
+  f_export_plot(plot, plot_name)
+}
+
+f_plot_ordination_plots(ps = all_ps, min_prev = 1, min_abundance = 0, side_panels = TRUE, dist = "bray", 
+                        plot_scree = TRUE) 
+
+f_plot_ordination_plots(ps = all_ps, min_prev = 2, min_abundance = 0, side_panels = TRUE, dist = "bray", 
+                        plot_scree = FALSE) 
+
+f_plot_ordination_plots(ps = all_ps, min_prev = 1, min_abundance = 0, side_panels = TRUE, dist = "jaccard", 
+                        plot_scree = TRUE) 
+
+
+f_plot_ordination_plots(ps = all_ps, min_prev = 2, min_abundance = 0, side_panels = TRUE, dist = "jaccard", 
+                        plot_scree = TRUE) 
+
+
+f_plot_ordination_plots(ps = all_ps, min_prev = 2, min_abundance = 0.01, side_panels = TRUE, dist = "jaccard", 
+                        plot_scree = TRUE) 
+
+f_plot_ordination_plots(ps = all_ps, min_prev = 10, min_abundance = 0, side_panels = TRUE, dist = "jaccard", 
+                        plot_scree = TRUE) 
+```
+
+```{r}
+# rarecurve
+library(vegan)
+tidy_rare <- rarecurve(as.data.frame(t(otu_table(all_ps_count))), step = 1000, tidy = TRUE)
+
+tidy_rare <- tidy_rare %>%
+  separate(Site, into = c("part1", "part2", "analysis"), sep = "\\.", remove = FALSE) %>%
+  mutate(sampleID = paste(part1, part2, sep = ".")) %>%
+  select(-part1, -part2)  # Optional: drop intermediate columns
+```
+
+```{r}
+# rarefaction curve plot
+tidy_rare %>% 
+  filter(Sample < 80000) %>% 
+  ggplot(aes(x = Sample, y = Species, color = analysis)) +
+    geom_point(size = 0.5) +
+    facet_wrap(~ analysis)
+```
+
+```{r}
+#  "average # of rank" and average alpha div metrics rarefying to min # of reads in ps_all_count
+
+# inputs: 
+# ps = phyloseq object to rarefy
+# rep = number of times to rarefy, rep iteration will be the seed 
+# sample_size = rarefaction depth
+# replace = No (theoretically better to sample w/o replacement ~ cameron et al 2021 )
+# trimOTUs = TRUE 
+# rarefy-even-depth(sample.size, rngseed, replace = FALSE, trimOTUs = TRUE)
+
+
+```
