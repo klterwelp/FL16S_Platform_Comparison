@@ -174,10 +174,14 @@ f_add_metadata <- function(ps_ls) {
   tib_ls <- lapply(ps_ls, function(ps) {
     sd <- sample_data(ps)
     tib <- as_tibble(sd)
+    if ("final_read_pairs" %in% colnames(tib)) {
+      tib <- tib %>% rename(total_reads = final_read_pairs)
+    }
     tib <- tib %>%
       select(any_of(keep_cols))
     return(tib)
   })
+  
   # bind all tibbles and convert back to sample data
   tib_all <- bind_rows(tib_ls)
   sd_all <- sample_data(tib_all)
