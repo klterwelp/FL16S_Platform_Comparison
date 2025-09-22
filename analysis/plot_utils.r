@@ -5,6 +5,7 @@ all_ps <- readRDS(all_ps_path)
 all_ps <- all_ps %>% ps_mutate(analysis = factor(analysis, levels = c("MGX", "FL-16S", "V1-V3")))
 analysis_labs <- c("V1-V3", "FL-16S", "Metagenomics")
 names(analysis_labs) <- c("V1-V3", "FL-16S", "MGX")
+
 # useful plotting functions
 # all_ps is relative but we can transform it back into counts using the total_counts
 f_relative_to_counts <- function(ps_rel) {
@@ -45,3 +46,7 @@ f_export_plot <- function(plot, out_file, width = 8, height = 4, dpi = 300) {
   out_path <- file.path("../figures/", out_file)
   ggsave(out_path, plot = plot, width = width, height = height, dpi = dpi)
 }
+
+# converted counts data
+# generate pseudo-counts data using total_reads
+all_ps_count <- f_relative_to_counts(all_ps)
