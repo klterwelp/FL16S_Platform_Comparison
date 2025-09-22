@@ -1,32 +1,32 @@
 #!/bin/bash
 # This script performs BLAST searches against the NCBI 16S ribosomal RNA database
 # Used to assign species-level taxonomy to the FL-16S and V1-V3 16S reference sequences.
-# Inputs:  
+# Inputs:
 #   - data/FL-16S/rep-seqs.qza
 #   - data/16S_V1-V3/rep-seqs.qza
 #   - references/NCBI_blast/16S_ribosomal_RNA.tar.gz
 #       - version May 24, 2025 via:
 #       - wget "https://ftp.ncbi.nlm.nih.gov/blast/db/16S_ribosomal_RNA.tar.gz"
-# Environment: 
-#   - BLAST 2.16 conda environment from environments/blast.yml 
-# Outputs: 
+# Environment:
+#   - BLAST 2.16 conda environment from environments/blast.yml
+# Outputs:
 #   - V1V3_NCBI-16S-blast-results.tsv: the BLAST hit results for the V1-V3 region
 #   - FL16S_NCBI-16S-blast-results.tsv: the BLAST hit results for the FL-16S region
-# all of these TSVs will have the following BLAST columns: 
-#   - qseqid 
-#   - qlen 
-#   - sseqid 
-#   - slen 
-#   - length 
-#   - pident 
-#   - nident 
-#   - evalue 
-#   - bitscore 
-#   - mismatch 
-#   - qcovs 
-#   - gaps 
+# all of these TSVs will have the following BLAST columns:
+#   - qseqid
+#   - qlen
+#   - sseqid
+#   - slen
+#   - length
+#   - pident
+#   - nident
+#   - evalue
+#   - bitscore
+#   - mismatch
+#   - qcovs
+#   - gaps
 #   - sscinames
-# Number of threads 
+# Number of threads
 NUM_THREADS=10
 # Locations of the input files
 V1V3_REP_SEQS="../data/16S_V1-V3/rep-seqs.qza"
@@ -53,7 +53,7 @@ if [ ! -f $BLAST_TAR ]; then
     exit 1
 fi
 # Extract fasta sequences from the QZA files (if not already done)
-TMPDIR="tmp_unzip" 
+TMPDIR="tmp_unzip"
 if [ ! -f $V1V3_FASTA ]; then
     echo "Extracting V1-V3 sequences from $V1V3_REP_SEQS"
     mkdir -p $TMPDIR
@@ -74,7 +74,7 @@ if [ ! -f "../references/NCBI_blast/16S_ribosomal_RNA.nto" ]; then
     tar -xzf $BLAST_TAR -C ../references/NCBI_blast/
 fi
 # Activate the BLAST conda environment
-source activate blast
+conda activate blast
 export BLASTDB="../references/NCBI_blast/" # location of NCBI taxdb database
 # make the output directory if it does not exist
 mkdir -p $OUT_FOL
@@ -90,7 +90,7 @@ if [ ! -f $V1V3_BLAST_OUTPUT ]; then
     echo "BLAST results for V1-V3 region saved to $V1V3_BLAST_OUTPUT"
 else
     echo "V1-V3 BLAST results already exist at $V1V3_BLAST_OUTPUT"
-fi  
+fi
 if [ ! -f $FL_BLAST_OUTPUT ]; then
     echo "Running BLAST for FL-16S region"
     blastn -query "$FL16S_FASTA" \

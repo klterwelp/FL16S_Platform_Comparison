@@ -1,13 +1,13 @@
 #!/bin/bash
 # This script performs paired BLAST searches for each amplicon dataset against the other.
-# Used to determine which ASVs across V1-V3 and FL-16S are paired, 
-# where pairs share sequence identity. 
-# Inputs:  
+# Used to determine which ASVs across V1-V3 and FL-16S are paired,
+# where pairs share sequence identity.
+# Inputs:
 #   - data/FL-16S/dada2_seq.fasta.qza: fasta sequences after DADA2 denoising
 #   - data/16S_V1-V3/dada2_seq.fasta.qza: fasta sequences after DADA2 denoising
-# Environment: 
-#   - BLAST 2.16 conda environment from environments/blast.yml 
-# Outputs: 
+# Environment:
+#   - BLAST 2.16 conda environment from environments/blast.yml
+# Outputs:
 #   - data/16S_V1-V3/dada2_rep-seqs.fasta: fasta sequences for the V1-V3 region
 #   - data/FL-16S/dada2_rep-seqs.fasta: fasta sequences for the FL-16S region
 #   - intermediates/paired-blast-results/
@@ -28,7 +28,7 @@
 #           - mismatch: number of mismatches
 #           - qcovs: query coverage of the subject sequence
 #           - gaps: number of gaps in the alignment
-# Number of threads 
+# Number of threads
 NUM_THREADS=10
 # Locations of the input files
 V1V3_REP_SEQS="../data/16S_V1-V3/dada2_seq.fasta.qza"
@@ -52,7 +52,7 @@ if [ ! -f $FL16S_REP_SEQS ]; then
 fi
 
 # Extract fasta sequences from the QZA files (if not already done)
-TMPDIR="tmp_unzip" 
+TMPDIR="tmp_unzip"
 if [ ! -f $V1V3_FASTA ]; then
     echo "Extracting V1-V3 sequences from $V1V3_REP_SEQS"
     mkdir -p $TMPDIR
@@ -68,7 +68,7 @@ if [ ! -f $FL16S_FASTA ]; then
     rm -rf $TMPDIR
 fi
 # Activate the BLAST conda environment
-source activate blast
+conda activate blast
 # make the output directory if it does not exist
 mkdir -p $OUT_FOL
 # create the BLAST databases if they do not exist
@@ -93,7 +93,7 @@ if [ ! -f $V1V3_BLAST_OUTPUT ]; then
     echo "Paired BLAST results for V1-V3 region saved to $V1V3_BLAST_OUTPUT"
 else
     echo "V1-V3 paired BLAST results already exist at $V1V3_BLAST_OUTPUT"
-fi  
+fi
 if [ ! -f $FL_BLAST_OUTPUT ]; then
     echo "Running BLAST for FL-16S region against V1-V3 data"
     blastn -query "$FL16S_FASTA" \
