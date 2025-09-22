@@ -1,0 +1,62 @@
+---
+title: "Paired Amplicon Analysis"
+author: "Kat Terwelp"
+format: pdf
+editor: visual
+---
+
+## Paired Amplicon Analysis
+
+Amplicon single nucleotide variants are paired using BLAST (looking for identical matches).
+
+```{r}
+# load libraries
+library(phyloseq) # for working with phyloseq objects
+library(qiime2R) # import qza files
+library(microViz) # useful phyloseq functions
+library(ggpubr) # add statistics to graphs
+library(skimr) # create summaries of dataframes (super useful!)
+library(vegan) # beta diversity analyses
+```
+
+```{r}
+# import data 
+cols <- c("query_asv", "query_len", "seq_asv", "seq_len", "alignment_len", "perc_id", "num_id", "evalue", "bitscore", "mismatch", "query_coverage", "gaps")
+
+# import blast tsvs
+blast_v1v3 <- read_tsv("../intermediates/paired-blast-results/FL16S_paired-blast-results.tsv", col_names = cols)
+blast_fl <- read_tsv("../intermediates/paired-blast-results/V1V3_paired-blast-results.tsv", col_names = cols)
+
+# import original dada2 sequences
+v1v3path <- "../data/16S_V1-V3/dada2_seq.fasta.qza"
+flpath <- "../data/FL-16S/dada2_seq.fasta.qza"
+seq_v1v3 <- read_qza(v1v3path)
+seq_fl <- read_qza(flpath)
+
+# extract input ASVs for paired blast 
+name_seq_fl <- names(seq_fl$data)
+## 4036 for FL-16S 
+name_seq_v1v3 <- names(seq_v1v3$data)
+## 2497 for V1-V3
+
+# functions
+# function to filter blast table to just exact hits
+f_filt_blast <- function(tbl) {
+  tbl <- tbl %>% 
+  filter(perc_id == 100) %>% 
+  filter(alignment_len == seq_len | alignment_len == query_len) %>% 
+  group_by(query_asv) %>% 
+  mutate(q_asv_matches = length(unique(seq_asv))) %>% # number of ASVs matching to query
+  group_by(seq_asv) %>% 
+  mutate(s_asv_matches = length(unique(query_asv))) %>% # number of ASVs matching to same sub 
+  mutate(hit_type = "match") %>% 
+    ungroup()
+  return(tbl)
+}
+```
+
+```{r}
+match_fl <- f_filt_blast(blast_fl)
+match_v1v3 <- f_filt_blast(blast_v1v3)
+```
+
