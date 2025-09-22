@@ -16,7 +16,7 @@ library(tidyverse) # work with tibbles etc
 library(phyloseq) # work with phyloseq objects
 library(microViz) # useful package for visualizations
 library(vegan) # for calculating rarecurve
-library(miryln) # for calculating iterations of repeat rarefactions
+#library(miryln) # for calculating iterations of repeat rarefactions
 
 # set file paths
 in_path <- "../intermediates/RDS"
@@ -146,7 +146,7 @@ names(analysis_labs) <- c("V1-V3", "FL-16S", "MGX")
 all_ps_count <- f_relative_to_counts(all_ps)
 ```
 
-**Taxonomy Updates - Are Non-Updated Taxa Rare or Significant Members?**
+**Taxonomy Updates - Are Non-Updated Taxa Rare or Significant Members? \[skipping for now\]**
 
 ```{r}
 # generate plot phyloseqs
