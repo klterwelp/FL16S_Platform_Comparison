@@ -1,0 +1,94 @@
+---
+title: "Beta Diversity Analysis"
+author: "Kat Terwelp"
+format: pdf
+editor: visual
+---
+
+## Beta Diversity Analyses Across All Platforms
+
+These plots look at the beta diversity differences across all platforms. We also quantify these differences statistically.
+
+### Plots 
+
+```{r}
+# load libraries
+library(tidyverse) # work with tibbles etc
+library(phyloseq) # work with phyloseq objects
+library(microViz) # useful package for visualizations
+
+# set file paths
+in_path <- "../intermediates/RDS"
+all_ps_path <- file.path(in_path, "all_ps.RDS")
+out_path <- "../figures"
+
+# set theme 
+theme_set(theme_bw()) # slightly clearer axes for facets
+
+# source common plot functions
+source("plot_utils.r", local = knitr::knit_global())
+
+# pcoa functions
+f_plot_ordination_plots <- function(ps, min_prev = 1, counts = FALSE, tax_select = 1:7, 
+                                    rank = "Species", min_abundance = 0,
+                                    variable = "analysis", dist = "bray",
+                                    dot_size = 2, palette = "Dark2") {
+  # prepare plot phyloseq object 
+  plot_ps <- f_plot_prep_phyloseq(ps, 
+                                  min_prev = min_prev, 
+                                  counts = counts,
+                                  tax_select = tax_select, 
+                                  rank = rank,
+                                  min_abundance)
+  # set binary var
+  if (dist == "jaccard") {
+    bin = TRUE
+  } else {
+    bin = FALSE
+  }
+  # prepare ordination and PcoA
+  ordination <- plot_ps %>% dist_calc(dist, binary = bin) %>% ord_calc("PCoA")
+  
+  plot <- ordination %>% 
+    ord_plot(color = variable, 
+             size = dot_size,
+            auto_caption = NA) +
+    scale_colour_brewer(name = "Platform", palette = palette, aesthetics = c("fill", "colour")) 
+  
+  # export plot with named variables 
+  print(plot)
+  plot_name <- paste("pcoa", dist, rank, min_prev, min_abundance, "plot.png", sep = "_")
+  f_export_plot(plot, plot_name)
+  return(ordination)
+}
+```
+
+```{r}
+# plot bray curtis ordination at species level 
+species_bray <- f_plot_ordination_plots(ps = all_ps, min_prev = 1, min_abundance = 0, dist = "bray") 
+# plot jaccard ordination
+species_jaccard <- f_plot_ordination_plots(ps = all_ps, min_prev = 1, min_abundance = 0, dist = "jaccard") 
+
+# plot again at genus level 
+genus_bray <- f_plot_ordination_plots(ps = all_ps, min_prev = 1, min_abundance = 0, dist = "bray",
+                                rank = "Genus") 
+# plot jaccard ordination
+genus_jaccard <- f_plot_ordination_plots(ps = all_ps, min_prev = 1, min_abundance = 0, dist = "jaccard", rank = "Genus") 
+```
+
+### Statistics
+
+```{r}
+# are these differences significant? 
+set.seed(123)
+# at species level 
+adonis2(formula = species_bray@dist ~ analysis + shrt_sample_dna, data = data.frame(species_bray@sam_data), permutations = 9999)
+adonis2(formula = species_jaccard@dist ~ analysis, data = data.frame(species_jaccard@sam_data), permutations = 9999)
+```
+
+```{r}
+# at genus level 
+set.seed(123)
+adonis2(formula = genus_bray@dist ~ analysis, data = data.frame(genus_bray@sam_data), permutations = 9999)
+adonis2(formula = genus_jaccard@dist ~ analysis, data = data.frame(genus_jaccard@sam_data), permutations = 9999)
+```
