@@ -47,3 +47,18 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# intermediates
+intermediates/*
+
+# references downloaded for NCBI BLAST 
+references/NCBI_blast/*
+
+# figures
+figures/*
+
+# RProj files 
+*.Rproj
+
+# fasta files
+*.fasta
