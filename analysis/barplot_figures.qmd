@@ -1,0 +1,166 @@
+---
+title: "Barplots Comparing Platforms"
+author: "Kat Terwelp"
+format: pdf
+editor: visual
+---
+
+## Multi-Platform Barplots
+
+These plots give an overview of the differences in the communities detected using the three platforms: full-length 16S, V1-V3 16S, and metagenomics.
+
+```{r}
+# load libraries
+library(tidyverse) # work with tibbles etc
+library(phyloseq) # work with phyloseq objects
+library(microViz) # useful package for visualizations
+
+# set file paths
+in_path <- "../intermediates/RDS"
+all_ps_path <- file.path(in_path, "all_ps.RDS")
+out_path <- "../figures"
+
+# set theme 
+theme_set(theme_bw()) # slightly clearer axes for facets
+
+# functions
+source("plot_utils.r", local = knitr::knit_global()) # source common plot functions
+
+# function to create merged summary barplots (merged by analysis)
+f_merged_barplot <- function(ps, rank = "Species", bar_width = 0.9, bar_outline = NA, 
+                             n_taxa = 2, color_pallete = NA, xlabel, ylabel, 
+                             fill_label, text_size = 8, sample_order = "asis") {
+  if (length(color_pallete) == 1) {
+    color_pallete <- distinct_palette(n_taxa)
+    taxa_order = sum
+  } else {
+    taxa_order = names(color_pallete)
+  }
+  ps %>% 
+  phyloseq::merge_samples(group = "analysis") %>%
+  comp_barplot(tax_level = rank,
+               n_taxa = n_taxa, 
+               bar_outline_colour = bar_outline,
+               bar_width = bar_width,
+               sample_order = sample_order,
+               palette = color_pallete,
+               tax_order = taxa_order) +
+    labs(x = ylabel, y = xlabel, fill = fill_label) + # update labels
+    coord_flip() + # flix axis so barplots are horizontal
+    scale_x_discrete(labels = analysis_labs) + # set analysis labels 
+    theme(text = element_text(size = text_size),
+          panel.spacing.x = unit(3, "mm"), # better spacing
+          panel.background = element_blank(), # removes background color
+          panel.grid = element_blank(), # removes background grid
+          panel.border = element_blank(), # removes border
+          axis.ticks.y = element_blank(), # remove y axis ticks
+          legend.text = element_text(face = "italic") # italicize legend taxa names
+         ) 
+}
+# function to create unmerged barplots (shows per-sample varibility)
+f_barplot_by_samples <- function(ps, rank = "Species", bar_width = 0.9, bar_outline = NA, 
+                             n_taxa = 2, color_pallete = NA, xlabel, ylabel, 
+                             fill_label, text_size = 8, sample_order = "asis") {
+  if (length(color_pallete) == 1) {
+    color_pallete <- distinct_palette(n_taxa)
+    taxa_order = sum
+  } else {
+    taxa_order = names(color_pallete)
+  }
+  ps %>% 
+    comp_barplot(tax_level = rank,
+                 x = "shrt_sample_dna",
+                 n_taxa = n_taxa, 
+                 bar_outline_colour = bar_outline,
+                 bar_width = bar_width,
+                 sample_order = sample_order,
+                 palette = color_pallete,
+                 tax_order = taxa_order) +
+    labs(x = xlabel, y = ylabel, fill = fill_label) + # update labels
+    facet_wrap(facets = vars(analysis), 
+               scales = "fixed", 
+               labeller = labeller(analysis = analysis_labs)) +
+    coord_flip() + 
+    theme(text = element_text(size = text_size),
+          panel.spacing.x = unit(3, "mm"), # better spacing
+          panel.background = element_blank(), # removes background color
+          panel.grid = element_blank(), # removes background grid
+          panel.border = element_blank(), # removes border
+          strip.background = element_rect(colour=NA, fill="grey90"), # facet labels grey
+          axis.text.y = element_blank(), # remove y axis text 
+          axis.ticks.y = element_blank(), # remove y axis ticks
+          axis.text.x = element_text(angle = 90, vjust = 0.7, hjust = 0.2), # rotate text
+          legend.text = element_text(face = "italic")) # italicize legend taxa names
+         
+}
+```
+
+```{r}
+# import data
+all_ps <- readRDS(all_ps_path)
+
+# set up analysis variable
+all_ps <- all_ps %>% ps_mutate(analysis = factor(analysis, levels = c("MGX", "FL-16S", "V1-V3")))
+analysis_labs <- c("V1-V3", "FL-16S", "Metagenomics")
+names(analysis_labs) <- c("V1-V3", "FL-16S", "MGX")
+
+# generate pseudo-counts data using total_reads 
+all_ps_count <- f_relative_to_counts(all_ps)
+```
+
+```{r}
+# prepare ps for plots
+# set graph variables
+num_taxa <- 15
+num_taxa_barplot <- 12
+num_genus <- 7
+
+# generate plot phyloseqs
+species_ps <- f_plot_prep_phyloseq(all_ps, 
+                                    min_prev = 1, 
+                                    counts = FALSE,
+                                    tax_select = 1:7, # Kingdom-Species
+                                    rank = "Species")
+
+genus_ps <- f_plot_prep_phyloseq(all_ps, 
+                                 min_prev = 1,
+                                 counts = FALSE, 
+                                 tax_select = 1:7, # Kingdom-Species, 
+                                 rank = "Genus")
+
+# colors for barplots
+colors_species <- species_ps %>% 
+  tax_palette(rank = "Species", n = num_taxa, add = NA)
+names(colors_species) <- sort(names(colors_species))
+colors_species["Other"] <- "grey90"
+
+colors_genus <- genus_ps %>% 
+  tax_palette(rank = "Genus", n = num_genus, add = NA)
+names(colors_genus) <- sort(names(colors_genus))
+colors_genus["Other"] <- "grey90"
+```
+
+```{r}
+# generate barplots at species and genus levels
+f_barplot_by_samples(species_ps, rank = "Species", n_taxa = num_taxa_barplot, 
+                     color_pallete = colors_species, xlabel = "Sample", 
+                     ylabel = "Relative Abundance", fill_label = "Species", text_size = 10)
+file_name <- paste0("top-", num_taxa_barplot, "_species_taxonomy_barplot.png")
+f_export_plot(plot = last_plot(), out_file = file_name)
+
+# merge all samples into summary barplot of abundances
+f_merged_barplot(species_ps, rank = "Species", n_taxa = num_taxa, color_pallete = colors_species, xlabel = "Relative Abundance", ylabel = "Platform", fill_label = "Species")
+file_name <- paste0("top-", num_taxa, "_species_merged_taxonomy_barplot.png")
+f_export_plot(plot = last_plot(), out_file = file_name)
+
+# repeat, but at genus level
+f_barplot_by_samples(genus_ps, rank = "Genus", n_taxa = num_genus, 
+                     color_pallete = colors_genus, xlabel = "Sample", 
+                     ylabel = "Relative Abundance", fill_label = "Genus", text_size = 10)
+file_name <- paste0("top-", num_genus, "_genus_taxonomy_barplot.png")
+f_export_plot(plot = last_plot(), out_file = file_name)
+
+f_merged_barplot(genus_ps, rank = "Genus", n_taxa = num_genus, color_pallete = colors_genus, xlabel = "Relative Abundance", ylabel = "Platform", fill_label = "Genus")
+file_name <- paste0("top-", num_genus, "_genus_merged_taxonomy_barplot.png")
+f_export_plot(plot = last_plot(), out_file = file_name)
+```
