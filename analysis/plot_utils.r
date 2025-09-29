@@ -3,16 +3,17 @@ all_ps <- readRDS(all_ps_path)
 
 # set up analysis variable
 all_ps <- all_ps %>% ps_mutate(analysis = factor(analysis, levels = c("MGX", "FL-16S", "V1-V3")))
+# fixing labels
 analysis_labs <- c("V1-V3", "FL-16S", "Metagenomics")
 names(analysis_labs) <- c("V1-V3", "FL-16S", "MGX")
 
 # useful plotting functions
-# all_ps is relative but we can transform it back into counts using the total_counts
+# all_ps is relative so transform it back into counts using the total_counts
 f_relative_to_counts <- function(ps_rel) {
   total_reads <- sample_data(ps_rel)$total_reads
   otu_rel <- as(otu_table(ps_rel), "matrix") # extract matrix otu table
-  otu_counts <- sweep(otu_rel, 2, total_reads, `*`) # multiply rel abx by read counts
-  otu_counts <- otu_counts %>% round() # round to keep whole numbers (@ mgx data)
+  otu_counts <- sweep(otu_rel, 2, total_reads, `*`) # multiply rel abx by counts
+  otu_counts <- otu_counts %>% round() # round to keep whole numbers (for mgx)
   otu_table(ps_rel) <- otu_table(otu_counts, taxa_are_rows = taxa_are_rows(ps_rel))
   return(ps_rel)
 }
