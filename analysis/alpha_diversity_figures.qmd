@@ -5,7 +5,7 @@ format: pdf
 editor: visual
 ---
 
-### Plots 
+### Set Up
 
 ```{r}
 library(tidyverse) # work with tibbles etc
@@ -25,6 +25,8 @@ theme_set(theme_bw()) # slightly clearer axes for facets
 source("plot_utils.r", local = knitr::knit_global())
 ```
 
+## Rarefaction Curve
+
 ```{r}
 # rarecurve
 set.seed(123)
@@ -42,4 +44,68 @@ tidy_rare %>%
   ggplot(aes(x = Sample, y = Species, color = analysis)) +
     geom_point(size = 0.5) +
     facet_wrap(~ analysis)
+```
+
+## Alpha Diversity Metrics
+
+```{r}
+#  "average # of rank" and average alpha div metrics rarefying to min # of reads in ps_all_count
+
+# inputs: 
+# ps = phyloseq object to rarefy
+# rep = number of times to rarefy, rep iteration will be the seed 
+# sample_size = rarefaction depth
+# replace = No (theoretically better to sample w/o replacement ~ cameron et al 2021 )
+# trimOTUs = TRUE 
+# rarefy-even-depth(sample.size, rngseed, replace = FALSE, trimOTUs = TRUE)
+
+# set up phyloseq object
+all_ps_count_fix <- all_ps_count
+all_ps_count_fix@tax_table <- all_ps_count_fix@tax_table[,1:7]
+
+iter_rarefaction_uniq_rank <- function(ps, sample_size=min(sample_sums(ps)), 
+                                       reps = 100, replace = FALSE) {
+  # function to get length of taxa
+  uniq_num_taxa <- function(ps, rank) {
+    num_taxa <- length(get_taxa_unique(ps, rank))
+  }
+  # initiate table 
+  table <- tibble() 
+  for (i in seq(reps)) {
+    print(paste0("Processing ", i, "/", reps, "..."))
+    # initiate table for rep
+    table_i <- expand.grid(rep = i, 
+                           ranks = rank_names(ps), 
+                           analysis = c("MGX", "FL-16S", "V1-V3"))
+    # rarefy ps 
+    rare_ps <- rarefy_even_depth(ps, 
+                          sample.size = sample_size, 
+                          rngseed = i, # seed is rep # 
+                          verbose = FALSE, 
+                          replace = replace)
+    # filter ps by analysis
+    rare_ps_mgx <- ps_filter(rare_ps, analysis == "MGX")
+    rare_ps_v1v3 <- ps_filter(rare_ps, analysis == "V1-V3")
+    rare_ps_fl <- ps_filter(rare_ps, analysis == "FL-16S")
+    # fill otu rarefied table
+    table_i <- table_i %>% 
+      rowwise() %>% 
+      mutate(num_taxa = case_when(
+        analysis == "MGX" ~ uniq_num_taxa(rare_ps_mgx, ranks),
+        analysis == "V1-V3" ~ uniq_num_taxa(rare_ps_v1v3, ranks),
+        analysis == "FL-16S" ~ uniq_num_taxa(rare_ps_fl, ranks))) %>%
+      mutate(ranks = factor(ranks, 
+                            levels = c("Kingdom", "Phylum", "Class", 
+                                       "Order", "Family", "Genus", 
+                                       "Species"), ordered = TRUE))
+    table <- bind_rows(table, table_i)
+  }
+  return(table)
+}
+
+rare_rank <- iter_rarefaction_uniq_rank(all_ps_count_fix)
+rare_rank_10k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
+                                        sample_size = 10000)
+rare_rank_30k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
+                                        sample_size = 30000)
 ```
