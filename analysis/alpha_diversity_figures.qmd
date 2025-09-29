@@ -167,6 +167,8 @@ f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_median_genus.
 
 Similar plot to the rarecurves, but instead of median per sample, get the total number of unique taxa detected
 
+I should also add "ASV" level for Jason
+
 ```{r}
 # function 
 f_rarecurve_total_counts <- function(ps, 
@@ -275,6 +277,8 @@ f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_total-taxa_am
 
 ```
 
+I should repeat this, but filtering out the metagenomics phyla that are not seen in the plot
+
 ## Alpha Diversity Metrics
 
 ```{r}
@@ -338,3 +342,4 @@ rare_rank_10k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
 rare_rank_30k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
                                         sample_size = 30000)
 ```
+
