@@ -1,0 +1,821 @@
+---
+title: "03_v1v3-pacbio-comparison"
+author: "Kat Terwelp"
+format: html
+editor: visual
+---
+
+## V1-V3 PacBio Comparison
+
+OUTPUTS:
+
+-   ANCOMBC:
+
+    -   What taxa are differently abundant?
+
+    -   Why are these taxa differently abundant?
+
+    -   Are these taxa associated with the ASVs that do not match between datasets?
+
+        -   ie; are they more likely unmatched than the overall percentage of unmatched ASvs
+
+-   Aitchison distance with taxa arrows
+
+    -   [Follow this example](https://david-barnett.github.io/microViz/articles/web-only/ordination.html) (rclr transform + PCA plot)
+
+-   Rarefaction alpha diversity curves
+
+    -   Where does the curve flatten between datasets?
+
+    -   Does the curve flatten at different locations based on query_type?
+
+    -   Why would the curve flatten differently between datasets?
+
+-   Alpha diversity statistical differences
+
+    -   [Keeping in mind patient ID](https://gitlab.oit.duke.edu/mic-course/2023-mic/-/blob/main/content/amplicon/biostats/stat_microbiome_II.Rmd?ref_type=heads)
+    -   How does evenness, shannon diversity, and richness differ across analyses
+
+-   RCLR transformed heatmap comparison
+
+    -   Visualization of ANCOMBC differences
+
+-   BLAST Sequence Comparison:
+
+    -   Paired ASVs:
+        -   \# of unique PacBio ASVs per V1-V3 ASV
+
+        -   \# of unique PacBio species per V1-V3 ASV
+
+        -   Portion of taxa within samples explained by matched ASVs
+
+            -   \% of total ASV across all samples
+
+                -   is there a difference between sequencing types (yes)
+
+            -   \% of ASVs within sample
+
+                -   are matches sample dependent?
+
+            -   \% of abundance of all ASVs within samples
+
+                -   ie: non-matches just rare taxa?
+
+        -   Matched ASV species classification
+
+            -   \% of all unique matched ASVs with species level classification
+
+                -   Does this differ between query types? ie: v1-v3 or FL 16S
+
+                -   Does the number of unique species differ?
+
+            -   \% of unmatched ASVs with species level classification
+
+                -   Does this differ between query types?
+
+                -   Does the number of unique species differ?
+
+            -   \% of matched ASVS with identical query + subject species IDs
+
+                -   Is this percentage the same for samples? (ie; percentage of matched ASVs with identical species calls)
+
+                -   Is this percentage the same for query_type? (ie: do PacBio ASVs match more V1-V3 species calls than vice versa?)
+
+                    -   I would assume V1-V3 would match less since PacBio has more species ID'd overall
+
+        -   Matched ASVs within same samples
+
+            -   Do matched ASVs show up in the same samples? (I would assume so?)
+
+                -   Maybe compare the samples that a matched ASV shows up with \>0 abundance within
+
+            -   Why would matched ASVs not show up in the same sample:
+
+                -   matched with multiple pacBio ASVs with dif species (true biological variation)
+
+                -   rare taxa and primer binding differences
+
+        -   Match vs Non-match comparisons:
+
+            -   Matched rel. abundance vs non-match rel. abundances
+
+                -   ie: are matched taxa more commonly observed?
+
+            -   Matched taxa vs non-match classifications (are there overlaps?)
+
+            -   Sequence comparison: what do the primer binding regions look like for the full 16S rRNA sequences or genomes? Do they bind with both primers?
+
+            -   Are non matched asvs more likely to have been filtered out as unclassified / contamination?
+
+-   Database comparison:
+
+    -   How often are all database assignments (Greengenes2, SILVA, BLAST, eHOMD) in agreement? How do each of the assignments compare to BLAST?
+
+    -   How does database assignment impact species ID comparisons from previous analyses?
+
+    -   What method is the best for classifying species?
+
+        -   How do we measure this and is this possible to determine?
+
+        -   Is unique \# of species ID'd a good measurement (probably not)
+
+        -   Is % of ASVs with species assignments a good measurement (probably not?)
+
+        -   Is % of agreement with BLAST species assignment a good measurement (maybe?)
+
+### Set Up Analysis
+
+#### Load Libraries
+
+```{r}
+library(ANCOMBC) # useful for ancombc differential abundance analyses
+library(mia) # used for ancombc 
+library(Biostrings) # to manipulate sequences in R
+library(tidyverse) # maniuplate tibbles
+library(rBLAST) # run BLAST in R
+library(phyloseq) # for working with phyloseq objects
+library(qiime2R) # import qza files
+library(microViz) # useful phyloseq functions
+library(ggpubr) # add statistics to graphs
+library(skimr) # create summaries of dataframes (super useful!)
+library(vegan) # beta diversity analyses
+library(ggside) # add boxplots to scatterplots
+library(mirlyn) # useful alpha diversity analyses
+```
+
+#### Load RDS Objects
+
+```{r}
+abs.ps.ls <- readRDS("RDS/abs.ps.ls")
+amp.ps <- readRDS("RDS/amp.ps")
+```
+
+### Paired Sequence ASVs
+
+Run 03_paired-sequence-blast code to create:
+
+-   blast-results-pacb.tmp
+
+-   blast-results-v1v3.tmp
+
+#### Sequence Statistics post DADA2
+
+```{r}
+# paths to DADA2 sequences
+v1v3path <- "~/20240313_PacBioComparison/V1-V3-MockMISP-20231023_Qiime2Results/02-dada2/qza"
+pacbpath <- "~/20240313_PacBioComparison/PacBio-20240313_Qiime2Results/02-dada2/qza"
+
+# create biostring objects
+seq.v1v3 <- read_qza(file.path(v1v3path, "02_seq.fasta.qza"))
+seq.pacb <- read_qza(file.path(pacbpath, "02_seq.fasta.qza"))
+
+# how many unique sequences? 
+num.seq.pacb <- length(seq.pacb$data)
+name.seq.pacb <- names(seq.pacb$data)
+## 4036 for pacbio
+num.seq.v1v3 <- length(seq.v1v3$data)
+name.seq.v1v3 <- names(seq.v1v3$data)
+## 2497 for V1V3
+```
+
+```{r}
+cols <- c("query_asv", "query_len", "seq_asv", "seq_len", "alignment_len", "perc_id", "num_id", "evalue", "bitscore", "mismatch", "query_coverage", "gaps")
+
+blast.v1v3 <- read_tsv("blast-results-v1v3.tmp", col_names = cols)
+
+blast.pacb <- read_tsv("blast-results-pacb.tmp", col_names = cols)
+
+
+# PACBIO RESULTS #
+
+name.blast.pacb <- unique(blast.pacb$query_asv)
+num.blast.pacb <- length(name.blast.pacb)
+# 2641 sequences have BLAST matches
+
+not.blast.pacb <- setdiff(name.seq.pacb, name.blast.pacb)
+# 1395 sequences do NOT have BLAST matches
+
+num.blast.pacb/num.seq.pacb*100
+# 65.43% of PacBio sequences have BLAST matches 
+
+length(unique(blast.pacb$seq_asv))
+length(unique(blast.pacb$seq_asv))/num.seq.v1v3*100
+# 1157 v1-v3 sequences are matched (46.33% of V1-V3)
+
+# V1V3 RESULTS #
+
+name.blast.v1v3 <- unique(blast.v1v3$query_asv)
+num.blast.v1v3 <- length(name.blast.v1v3)
+# 1156 sequences have BLAST matches
+
+num.blast.v1v3/num.seq.v1v3*100
+# 46.29% of v1-v3 sequences have matches 
+
+not.blast.v1v3 <- setdiff(name.seq.v1v3, name.blast.v1v3)
+# 1341 sequences do NOT have BLAST matches
+
+length(unique(blast.v1v3$seq_asv))
+length(unique(blast.v1v3$seq_asv))/num.seq.pacb*100
+# 2665 PacBio sequences are matched (66% of PacBio)
+
+```
+
+#### Visualization of Initial BLAST Hits
+
+```{r}
+# distribution of query lengths 
+p <- blast.pacb %>% 
+  ggplot(aes(x = query_len))
+p <- p + geom_histogram(binwidth = 2)
+p 
+
+p <- blast.v1v3 %>% 
+  ggplot(aes(x = query_len))
+p <- p + geom_histogram(binwidth = 2)
+p 
+# min v1v3 length is 281bp 
+
+# distribution of alignment length and seq length 
+p <- blast.v1v3 %>% 
+  ggplot(aes(x = alignment_len, y = query_len))
+p <- p + geom_point(aes(color = query_coverage, alpha = 0.2))
+p <- p + geom_abline()
+p <- p + ggtitle("Distribution of alignment + query lengths v1-v3")
+p 
+
+p <- blast.pacb %>% 
+  ggplot(aes(x = alignment_len, y = seq_len))
+p <- p + geom_point(aes(color = query_coverage, alpha = 0.2))
+p <- p + geom_abline()
+p <- p + ggtitle("Distribution of alignment + seq lengths PacBio")
+p 
+
+# exact matches: 
+p <- blast.pacb %>% 
+  filter(perc_id == 100) %>%
+  filter(alignment_len == seq_len) %>% 
+  ggplot(aes(x = alignment_len, y = seq_len)) 
+p <- p + geom_point(aes(color = query_coverage, alpha = 0.2))
+p <- p + geom_abline()
+p 
+
+p <- blast.v1v3 %>% 
+  filter(num_id == query_len) %>% 
+  filter(perc_id == 100) %>%
+  ggplot(aes(x = alignment_len, y = query_len)) 
+p <- p + geom_point(aes(color = query_coverage, alpha = 0.2))
+p <- p + geom_abline()
+p 
+
+```
+
+#### Filtering BLAST hits to exact matches
+
+```{r}
+filt.blast <- function(tbl) {
+  tbl <- tbl %>% 
+  filter(perc_id == 100) %>% 
+  filter(alignment_len == seq_len | alignment_len == query_len) %>% 
+  group_by(query_asv) %>% 
+  mutate(q_asv_matches = length(unique(seq_asv))) %>% # number of ASVs matching to query
+  group_by(seq_asv) %>% 
+  mutate(s_asv_matches = length(unique(query_asv))) %>% # number of ASVs matching to same sub 
+  mutate(hit_type = "match") %>% 
+    ungroup()
+  return(tbl)
+}
+
+# create filtered blast tibbles
+match.blast.v1v3 <- blast.v1v3 %>% filt.blast()
+match.blast.pacb <- blast.pacb %>% filt.blast()
+
+# How many unique ASVs have exact matches?
+
+## V1V3 RESULTS ## 
+name.mblast.v1v3 <- unique(match.blast.v1v3$query_asv)
+num.mblast.v1v3 <- length(name.mblast.v1v3)
+num.mblast.v1v3/num.seq.v1v3*100
+# 559 sequences (22.38%) have exact matches 
+
+num.seq.v1v3 - num.mblast.v1v3
+# 1938 sequences do not have exact matches
+
+length(unique(match.blast.v1v3$seq_asv))
+# matching 1672 PacBio sequences
+
+## PACBIO RESULTS ##
+name.mblast.pacb <- unique(match.blast.pacb$query_asv)
+num.mblast.pacb <- length(name.mblast.pacb)
+num.mblast.pacb/num.seq.pacb*100
+# 1672 sequences have exact matches (41.43%)
+
+num.seq.pacb - num.mblast.pacb
+# 2364 sequences do not have exact matches 
+
+length(unique(match.blast.pacb$seq_asv))
+# matching 559 v1v3 sequences 
+```
+
+-   **Why do a larger proportion (41%) of PacBio sequences exactly match V1-V3 sequences?** Only \~20% of V1-V3 sequences have exact PacBio matches.
+
+#### Filtering BLAST hits to best hits
+
+```{r}
+matchedASVs <- c(unique(match.blast.v1v3$query_asv), unique(match.blast.pacb$query_asv))
+# ASVs that have 100% matches
+
+filt.blast <- function(tbl) {
+  tbl <- tbl  %>% 
+  filter(!query_asv %in% matchedASVs) %>% # remove exact match ASV
+  mutate(seq_coverage = alignment_len/seq_len*100) %>% 
+  filter(seq_coverage > 99 | query_coverage > 95) %>%   
+  group_by(query_asv) %>% 
+  mutate(top_bitscore = max(bitscore), top_perc_id = max(perc_id)) %>% 
+  filter(bitscore == top_bitscore) %>% 
+  filter(top_perc_id == perc_id) %>% 
+  mutate(q_asv_matches = length(unique(seq_asv))) %>% #number of ASVs matching to query
+  group_by(seq_asv) %>%
+  mutate(s_asv_matches = length(unique(query_asv))) %>% # number of ASVs matching to same sub
+  ungroup() %>% 
+  mutate(hit_type = "best_hit")
+  return(tbl)
+}
+
+# create filtered blast tibbles
+filt.blast.v1v3 <- blast.v1v3 %>% filt.blast()
+filt.blast.pacb <- blast.pacb %>% filt.blast()
+
+## V1-V3 RESULTS ## 
+name.fblast.v1v3 <- unique(filt.blast.v1v3$query_asv)
+num.fblast.v1v3 <- length(name.fblast.v1v3)
+num.fblast.v1v3/num.seq.v1v3*100
+# 436 sequences (17.46%) have best hits 
+
+(num.fblast.v1v3 + num.mblast.v1v3)/num.seq.v1v3*100
+# 39.84% have any hits total 
+
+num.seq.v1v3 - num.fblast.v1v3 - num.mblast.v1v3
+# 1502 sequences do not have ANY matches
+
+length(unique(filt.blast.v1v3$seq_asv))
+# best hits of 1262 PacBio sequences 
+
+## PACBIO RESULTS ##
+name.fblast.pacb <- unique(filt.blast.pacb$query_asv)
+num.fblast.pacb <- length(name.fblast.pacb)
+num.fblast.pacb/num.seq.pacb*100
+# 874 sequences have best hits (21.65%)
+
+(num.fblast.pacb + num.mblast.pacb)/num.seq.pacb*100
+# 63.08% have any hits 
+
+num.seq.pacb - num.fblast.pacb - num.mblast.pacb
+# 1490 sequences do not have exact matches 
+
+length(unique(filt.blast.pacb$seq_asv))
+# matching 454 v1v3 sequences 
+
+```
+
+#### Combine both filter type tables
+
+```{r}
+all.filt.blast.pacb <- bind_rows(filt.blast.pacb, match.blast.pacb) %>% 
+  mutate(query_type = "pacbio") 
+
+all.filt.blast.v1v3 <- bind_rows(filt.blast.v1v3, match.blast.v1v3) %>% 
+  mutate(query_type = "v1v3")
+
+all.filt.blast <- bind_rows(all.filt.blast.pacb, all.filt.blast.v1v3)
+```
+
+#### Add non-match info
+
+```{r}
+hit.asv <- unique(all.filt.blast$query_asv)
+n.match.pb <- name.seq.pacb[!name.seq.pacb %in% hit.asv]
+n.match.v1 <- name.seq.v1v3[!name.seq.v1v3 %in% hit.asv]
+
+n.match.pb.tb <- tibble(query_asv = n.match.pb, q_asv_matches = 0, hit_type = "non-match", query_type = "pacbio")
+
+n.match.v1.tb <- tibble(query_asv = n.match.v1, q_asv_matches = 0, hit_type = "non-match", query_type = "v1v3")
+
+all.filt.blast <- full_join(all.filt.blast, n.match.pb.tb)
+all.filt.blast <- full_join(all.filt.blast, n.match.v1.tb)
+
+```
+
+#### Visualization of BLAST paired hits
+
+```{r}
+
+p <- all.filt.blast %>% 
+  filter(hit_type == "match") %>% 
+  ggplot(aes(x=q_asv_matches, fill=query_type))
+p <- p + geom_histogram(alpha=0.6, position = 'identity', binwidth = 3)
+p <- p + labs(x="Number of ASVs matching Query ASV", y="Count", fill = "Query Type") 
+p <- p + ggtitle("A V1-V3 ASV matches multiple PacBio V1-V9 ASVs")
+p
+
+ggsave("png/dist-qASV-blast-histo.png", plot = p)
+
+
+summary <- all.filt.blast %>% 
+  group_by(query_type, hit_type) %>% 
+  summarise(max_qASV_hits = max(q_asv_matches), 
+            unique_qASVs = n_distinct(query_asv)) 
+
+print(summary)
+```
+
+#### Add sequence filter information
+
+```{r}
+decontam.path <- "~/20240313_PacBioComparison/PacBio-20240313_Qiime2Results/03-decontam/qza/03_decontam_table.qza"
+
+# Import decontam data
+decontam.pass <- read_qza(decontam.path)$data %>% rownames() %>% unique()
+
+# Add decontam pass/fail into all.filt object
+
+temp <- all.filt.blast %>% 
+  filter(query_type == "pacbio") %>% 
+  mutate(rm_decontam = case_when(query_asv %in% decontam.pass ~ FALSE, 
+                                 .default = TRUE))
+
+all.filt.blast <- full_join(all.filt.blast, temp)
+
+# Import classify filter data 
+
+# pacbio has identical ASVs between HOMD + SILVA 
+pacbiosilva.path <- "~/20240313_PacBioComparison/PacBio-20240313_Qiime2Results/04-classify/silva/qza/table.qza"
+
+v1v3silva.path <- "~/20240313_PacBioComparison/V1-V3-MockMISP-20231023_Qiime2Results/04-classify/silva-138-99/qza/table.qza"
+
+v1v3homd.path <- "~/20240313_PacBioComparison/V1-V3-MockMISP-20231023_Qiime2Results/04-classify/HOMD-V1-V3/qza/table.qza"
+
+pb.pass <- read_qza(pacbiosilva.path)$data %>% rownames() %>% unique()
+v1.s.pass <- read_qza(v1v3silva.path)$data %>% rownames() %>% unique()
+v1.h.pass <- read_qza(v1v3homd.path)$data %>% rownames() %>% unique()
+
+temp <- all.filt.blast %>% 
+  filter(query_type == "pacbio") %>% 
+  mutate(rm_classify.pb = case_when(query_asv %in% pb.pass ~ FALSE, 
+                                 .default = TRUE))
+
+temp2 <- all.filt.blast %>% 
+  filter(query_type == "v1v3") %>% 
+  mutate(rm_classify.hmd = case_when(query_asv %in% v1.h.pass ~ FALSE, 
+                                 .default = TRUE),
+         rm_classify.slv = case_when(query_asv %in% v1.s.pass ~ FALSE, 
+                                 .default = TRUE))
+
+all.filt.blast <- full_join(temp2, temp)
+
+rm(list = c("temp", "temp2"))
+```
+
+#### Combine with taxonomy and metadata
+
+We're mainly going to focus on the BLAST consensus species calls so will only keep info from eHOMD database classifier
+
+```{r}
+abs.ps.ls <- readRDS("RDS/abs.ps.ls")
+tax.cols <- colnames(abs.ps.ls$HOMD.pacb.ps@tax_table)
+cols.keep <- c("OTU", "Sample", "Abundance", "sample_dna", "database", "analysis", "sample_type", "total_reads", "v1_v3_primer", tax.cols)
+
+
+melt_cln <- function(ps) {
+  ps <- ps %>% 
+  # ps_filter(v1_v3_primer == "CH" | is.na(v1_v3_primer)) %>% 
+  # ps_filter(database == "HOMD") %>% 
+  ps_melt() %>% 
+  select(any_of(cols.keep)) %>% 
+    filter(Abundance > 0) %>% 
+    mutate(rel_abundance = Abundance/total_reads*100) %>% 
+    select(-OTU) %>% 
+    rename(asv = ASV)
+  return(ps)
+}
+
+melt.ps <- amp.ps %>% melt_cln()
+
+temp1 <- melt.ps %>% 
+  rename_with(~ paste0("query_", .), everything())
+
+temp2 <- melt.ps %>% 
+  rename_with(~ paste0("seq_", .), everything())
+
+# combine query taxonomy etc with all.filt.blast 
+
+temp3 <- left_join(all.filt.blast, temp1)
+
+all.filt.blast.tax <- left_join(temp3, temp2)
+
+# filter to make data smaller and remove unnecc. 
+temp4 <- all.filt.blast.tax %>% 
+  filter(query_v1_v3_primer == "CH" | is.na(query_v1_v3_primer)) %>% 
+  filter(seq_v1_v3_primer == "CH" | is.na(seq_v1_v3_primer)) %>% 
+  filter(query_database == "HOMD" & seq_database == "HOMD")
+
+
+test <- temp4 %>% 
+    # filter(query_sample_dna == seq_sample_dna) %>% 
+    mutate(same_sample = case_when(query_sample_dna == seq_sample_dna ~ TRUE,
+                                   .default = FALSE), 
+           same_species = case_when(query_Species == seq_Species & same_sample == TRUE ~ TRUE,
+                                     is.na(query_Species) ~ NA,
+                                     is.na(query_Species) ~ NA,
+                                    same_sample == FALSE ~ NA, 
+                                     .default = FALSE), 
+           better_species = case_when(!is.na(query_Species) & is.na(seq_Species) & same_sample == TRUE ~ TRUE, 
+                                      same_sample == FALSE ~ NA, 
+                                      .default = FALSE))
+
+shared_samples <- intersect(sample_data(abs.ps.ls$HOMD.pacb.ps)$sample_dna, sample_data(abs.ps.ls$HOMD.v1v3.ps)$sample_dna)
+```
+
+### Visualization/Characterization of paired ASVs
+
+#### Relative abundance of matched ASVs in same samples
+
+```{r}
+query_labs <- c("Query: V1-V3", "Query: FL 16S")
+names(query_labs) <- c("v1v3", "pacbio")
+
+p.test <- test %>% 
+  filter(same_sample == TRUE & hit_type == "match") %>% 
+  group_by(seq_sample_dna, query_asv) %>%
+  mutate(seq_rel_abundance_cor = sum(seq_rel_abundance)) %>%
+  group_by(seq_sample_dna, seq_asv) %>%
+  mutate(query_rel_abundance_cor = sum(query_rel_abundance)) %>%
+  ungroup() %>% 
+  filter(query_sample_dna %in% shared_samples) %>%
+  filter(query_sample_type == "nasal" ) %>% 
+  group_by(query_asv) %>%
+  mutate(q_species_matches = length(unique(seq_Species))) %>%
+  mutate(query_type2 = case_when( query_type == "v1v3" ~ "V1-V3",
+                                  query_type == "pacbio" ~ "FL 16S")) %>% 
+  ungroup()
+
+p <-  p.test %>%
+  ggplot(aes(x=query_rel_abundance, y=seq_rel_abundance))
+
+p <- p + geom_jitter(aes(color = same_species))
+p <- p + facet_wrap(facets = "query_type")
+p <- p + geom_abline()
+p <- p + ggtitle("Uncorrected rel. abundance comparision")
+p 
+ggsave("png/uncor-seq-matched-dotplot.png", plot = p)
+
+
+p <-  p.test %>%
+  ggplot(aes(x=query_rel_abundance_cor, y=seq_rel_abundance_cor))
+
+p <- p + scale_alpha(guide = 'none')
+p <- p + geom_jitter(aes(color = same_species))
+p <- p + facet_wrap(facets = "query_type", labeller = labeller(query_type = query_labs))
+p <- p + geom_abline()
+p <- p + ggtitle("Paired ASVs Corrected Relative Abundance")
+p <- p + xlab("Query Relative Abundance")
+p <- p + ylab("Subject Relative Abundance")
+p <- p + labs(color = "Same Species?")
+p 
+ggsave("png/cor-seq-matched-dotplot.png",  plot = p)
+
+```
+
+#### Comparison of matched ASVs species ID + number of matched ASVs
+
+```{r}
+p <-  p.test %>%
+  ggplot(aes(x=q_species_matches, fill=query_type2))
+
+p <- p + geom_histogram(alpha=0.6, position = 'identity', binwidth = 1)
+p <- p + labs(fill="Query ASV Type", x="Number of Matched Subject Species", y = "Number of Query ASVs" )
+p <- p + ggtitle("V1-V3 ASVs Conflate Multiple FL16S Species")
+p <- p + theme_minimal()
+p <- p + theme(panel.grid.major = element_blank(), 
+               panel.grid.minor = element_blank())
+p
+ggsave("png/NCBCposter/matched-species-histo2.png", plot = p, width = 6)
+
+
+p <-  p.test %>%
+  ggplot(aes(x=q_asv_matches, fill=query_type2))
+p <- p + geom_histogram(alpha=0.6, position = 'identity', binwidth = 5)
+p <- p + labs(fill="Query ASV Type", x="Number of Subject ASV Matches", y = "Number of Query ASVs" )
+p <- p + ggtitle("V1-V3 ASVs Conflate Multiple FL16S ASVs")
+p <- p + theme_minimal()
+p <- p + theme(panel.grid.major = element_blank(), 
+               panel.grid.minor = element_blank())
+p
+ggsave("png/NCBCposter/matched-ASVs-histo2.png", plot = p, width = 6)
+
+```
+
+#### Visualization of Species ID using BLAST consensus
+
+```{r}
+tax.blast.16S.ls <- readRDS("RDS/tax.blast16S.ls")
+pacb.blast <- tax.blast.16S.ls$HOMD.pacb.ps %>%
+  select(-any_of(tax.cols[1:7])) %>%
+  mutate(query_type = "FL 16S")
+
+v1v3.blast <- tax.blast.16S.ls$HOMD.v1v3.ps %>% 
+  select(-any_of(tax.cols[1:7])) %>%
+  mutate(query_type = "V1-V3")
+
+all.blast <- bind_rows(pacb.blast, v1v3.blast)
+p <- all.blast %>%
+  ggplot(aes(x=num_Species_ASV, fill=query_type))
+p <- p + geom_histogram(alpha=0.6, position = 'identity', binwidth = 1)
+p <- p + labs(x="Number of Species matching ASV", y="Count", fill = "Query Type")
+p
+
+p.tbl <- all.blast %>%
+  mutate(blast_results = case_when(is.na(query_len) ~ FALSE,
+                             is.na(consensus_Species) ~ FALSE, .default = TRUE)) %>%
+  group_by(query_type) %>%
+  select(ASV, num_Species_ASV, num_Species_ASV_preFilter, unique_Species_ASV, consensus_Species, query_type, blast_results) %>%
+  mutate(total_ASV = length(unique(ASV))) %>%
+  distinct()
+
+
+p <- p.tbl %>%
+ggplot(aes(x = query_type, fill = blast_results))
+p <- p + geom_bar()
+p <- p + labs(x="Analysis", y="Number of ASVs", fill = "BLAST Classified")
+p <- p + ggtitle("Improved species-level classification with FL 16S")
+p <- p + theme_minimal()
+p <- p + theme(panel.grid.major = element_blank(), 
+               panel.grid.minor = element_blank())
+p
+
+ggsave("png/NCBCposter/species-id-barplot2.png", plot = p, width = 6)
+```
+
+### Alpha Diversity
+
+```{r}
+filt.amp.ps <- amp.ps %>% 
+  ps_filter(v1_v3_primer != "CM" | is.na(v1_v3_primer)) %>%
+  ps_filter(sample_type == "nasal" & (sample_dna %in% shared_samples)) %>%
+  ps_filter(database == "HOMD") %>%
+  ps_mutate(analysis2 = case_when(analysis == "PacBio" ~ "FL 16S",
+                                  analysis == "v1v3" ~ "V1-V3"))
+
+rarefy.amp.ps <-  filt.amp.ps %>%
+  rarefy_even_depth(sample.size = 10573, rngseed = 120)
+
+alpha.amp.ps <- rarefy.amp.ps %>%
+  tax_fix( #renames NAs to taxonomic rank last classified ex: Corynebacterium;Genus
+    min_length = 4,
+    unknowns = c(""),
+    sep = " ", anon_unique = TRUE,
+    suffix_rank = "classified") %>%
+  ps_calc_diversity("unique", index = "shannon", exp = TRUE) %>%
+  ps_calc_diversity("unique", index = "shannon") %>%
+  ps_calc_diversity("Species", index = "shannon", exp = TRUE) %>%
+  ps_calc_diversity("Species", index = "shannon")
+
+
+compare = c("PacBio", "v1v3")
+
+
+p.tbl <- alpha.amp.ps %>%
+  sample_data() %>%
+  as_tibble()
+
+
+p <- p.tbl %>%
+  ggboxplot(x = "analysis2", y = "shannon_Species", fill = "analysis2") +
+  ggtitle("Species Level Shannon Diversity Similar between Platforms") +
+  labs(fill = "Analysis", x = "Analysis", y = "Shannon Diversity",
+       caption = "Shannon diversity calculated after rarefaction to 10573 reads.") +   stat_compare_means(comparisons = compare, method = "anova") +
+  stat_compare_means(label.y = 3) +
+  theme_minimal()
+
+p <- p + theme(panel.grid.major = element_blank(), 
+               panel.grid.minor = element_blank())
+  p
+  ggsave("png/NCBCposter/pb-v1v3-shannon2.png", plot = last_plot(), width = 5, height = 6)
+  
+  sd.rarefy.amp.ps <- sample_data(rarefy.amp.ps) %>%
+    as_tibble() %>% 
+  mutate(sample_name = rownames(sample_data(rarefy.amp.ps)))  
+  
+  all.alpha.amp <- microbiome::alpha(rarefy.amp.ps, index = c("observed", "evenness_pielou"))
+  
+  all.alpha.amp <- all.alpha.amp %>%
+    mutate(sample_name = rownames(all.alpha.amp))
+  
+  all.alpha.amp <- full_join(all.alpha.amp, sd.rarefy.amp.ps)
+  
+  p <- all.alpha.amp %>%
+    ggboxplot(x = "analysis2", y = "observed", fill = "analysis2") +
+    ggtitle("Species Richness Higher in FL 16S") +
+    labs(fill = "Analysis", x = "Analysis", y = "Observed Species",
+         caption = "Observed species after rarefaction to 10573 reads.") +   stat_compare_means(comparisons = compare, method = "anova") +
+    stat_compare_means(label.y = 200) +
+    theme_minimal()
+  
+  p <- p + theme(panel.grid.major = element_blank(), 
+               panel.grid.minor = element_blank())
+  
+  p
+  ggsave("png/NCBCposter/pb-v1v3-observed2.png", plot = last_plot(), width = 5, height = 6)
+  
+    p <- all.alpha.amp %>%
+    ggboxplot(x = "analysis2", y = "evenness_pielou", fill = "analysis2") +
+    ggtitle("Pielou Evenness Higher in V1-V3") +
+    labs(fill = "Analysis", x = "Analysis", y = "Pielou Evenness",
+         caption = "Pielou's Evenness at species level after rarefaction to 10573 reads.") +   stat_compare_means(comparisons = compare, method = "anova") +
+    stat_compare_means(label.y = 1) +
+    theme_minimal()
+    
+    p <- p + theme(panel.grid.major = element_blank(), 
+               panel.grid.minor = element_blank())
+    
+  p
+  ggsave("png/NCBCposter/pb-v1v3-evenness2.png", plot = last_plot(), width = 5, height = 6)
+```
+
+### Beta Diversity
+
+```{r}
+filt.amp.species.ps <- filt.amp.ps %>% 
+  ps_mutate(V1V3 = as.numeric(analysis2 == "V1-V3")) %>%
+  tax_fix( #renames NAs to taxonomic rank last classified ex: Corynebacterium;Genus
+    min_length = 4,
+    unknowns = c(""),
+    sep = " ", anon_unique = TRUE,
+    suffix_rank = "classified") %>%
+  tax_agg(rank = "Species", force = TRUE)
+
+
+# robust clr transformation + PCA (preferred!)
+rclr.amp.ps <- filt.amp.species.ps %>%
+  tax_transform(trans = "rclr", rank = "Species")
+
+p <- rclr.amp.ps %>%
+  ord_calc(method = "PCA") %>%
+  ord_plot(color = "analysis2", 
+           plot_taxa = 1:3, 
+           size = 2,
+           tax_vec_length = 1,
+           tax_lab_length = 1.02,
+           tax_lab_style = tax_lab_style(
+            type = "text", max_angle = 90, fontface = "bold")) + 
+  labs(color = "Analysis",
+        caption = "Robust Aitchison Distance PCA") +
+    ggtitle(label = "Samples Cluster by Analysis Type: FL 16S or V1-V3") +
+  theme_minimal() 
+  p <- p + theme(panel.grid.major = element_blank(), 
+               panel.grid.minor = element_blank())
+p
+
+ggsave("png/NCBCposter/pb-v1v3-rclr-pca.png", plot = last_plot(), width = 6)
+
+dist.amp.species <- filt.amp.species.ps %>%
+  dist_calc(dist = "robust.aitchison")
+
+p <- filt.amp.species.ps %>%
+  dist_calc(dist = "robust.aitchison") %>% 
+  ord_calc(method = "PCoA") %>%
+  ord_plot(color = "analysis2",
+           size = 2) + 
+  labs(color = "Analysis") + 
+    ggtitle(label = "Samples Cluster by Analysis Type: FL 16S or V1-V3") +
+  theme_minimal() 
+  p <- p + theme(panel.grid.major = element_blank(), 
+               panel.grid.minor = element_blank())
+  p <- p + stat_ellipse(type = "norm", linetype = 2)
+  
+  
+
+```
+
+### ANCOMBC
+
+We will use ANCOMBC2 as in this [tutorial](https://www.bioconductor.org/packages/release/bioc/vignettes/ANCOMBC/inst/doc/ANCOMBC2.html)
+
+```{r}
+filt.amp.tse  <- makeTreeSummarizedExperimentFromPhyloseq(filt.amp.ps)
+
+set.seed(123)
+
+ancombc2.output = ancombc2(data = filt.amp.tse, assay_name = "counts", tax_level = "Species",
+                  fix_formula = "analysis2 + shrt_sample_dna",
+                  prv_cut = 0.10, lib_cut = 10000, 
+                  n_cl = 2, verbose = TRUE)
+
+ancombc2.res <- ancombc2.output$res
+
+ancombc2.res.filt <- ancombc2.res %>% 
+  select(taxon, ends_with("V1-V3")) 
+```
+
+```{r}
+
+```
