@@ -165,10 +165,114 @@ f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_median_genus.
 
 ## Richness 
 
-Similar plot to the rarecurves, but instead of median per sample, get the total number of unique taxa
+Similar plot to the rarecurves, but instead of median per sample, get the total number of unique taxa detected
 
 ```{r}
-all_ps_sp <- m
+# function 
+f_rarecurve_total_counts <- function(ps, 
+                                     by = 1000,
+                                     min = 1, 
+                                     max = "default", 
+                                     replace = FALSE, 
+                                     seed = 123) {
+  if (max == "default") {
+    # get max number of sequences 
+    max_reads <- max(ps@sam_data$total_reads)
+  } else {
+    max_reads = max
+  }
+  # sampling depths
+  sampling_depths <- seq(min, max_reads, by)
+  
+  # function to get length of taxa
+  uniq_num_taxa <- function(ps, rank) {
+    num_taxa <- length(get_taxa_unique(ps, rank))
+  }
+  
+  # initiate table and iteration
+  table_list <- list() 
+  i = 0
+  for (sampling_depth in sampling_depths) {
+    # add one to iteration
+    i = i + 1
+    # initiate table for rep
+    print(paste0("Processing sampling depth:", sampling_depth))
+    rare_ps <- rarefy_even_depth(ps, 
+                          sample.size = sampling_depth, 
+                          rngseed = seed,
+                          verbose = FALSE, 
+                          replace = replace)
+    # determine analyses that are left
+    analyses <- rare_ps@sam_data$analysis %>% unique() %>% as.character()
+    # intiate table to store values for this rep
+    table_i <- expand.grid(sampling_depth = sampling_depth, 
+                           ranks = rank_names(ps), 
+                           analysis = analyses)
+    # filter ps by analysis
+    filt_ps <- sapply(analyses, function(value) {ps_filter(rare_ps, analysis == value)})
+    # fill otu rarefied table
+    # calculate number of taxa for each rank and analysis 
+    table_i$num_taxa <- mapply(function(a, r) uniq_num_taxa(filt_ps[[a]], r),
+                                table_i$analysis, table_i$ranks)
+    # calculate the number of samples for each analysis
+    table_i$num_samples <- sapply(table_i$analysis, function(a) nsamples(filt_ps[[a]]))
+    # add the number of samples 
+    table_list[[i]] <- table_i
+  }
+  # combine all tables together
+  table <- bind_rows(table_list)
+  table <- table %>%
+      mutate(ranks = factor(ranks, 
+                            levels = c("Kingdom", "Phylum", "Class", 
+                                       "Order", "Family", "Genus", 
+                                       "Species"), ordered = TRUE))
+  return(table)
+}
+
+```
+
+```{r}
+all_ps_count_fix <- all_ps_count
+all_ps_count_fix@tax_table <- all_ps_count_fix@tax_table[,1:7]
+rarecurve_total <- f_rarecurve_total_counts(all_ps_count_fix, min = 1, max = 200001, by = 1000)
+
+saveRDS(object = rarecurve_total, file = "../intermediates/RDS/rarecurve_total.RDS")
+```
+
+```{r}
+# for all three 
+rarecurve_total %>% 
+dplyr::filter(num_samples > 21) %>% 
+  dplyr::filter(ranks != "Kingdom") %>% 
+  ggplot(aes(x = sampling_depth, y = num_taxa, colour = analysis)) +
+  geom_point() +
+  facet_wrap(~ranks, scales = "free_y") + 
+  scale_x_sqrt(labels = scales::label_number(scale_cut = cut_long_scale()), 
+               breaks = c(0, 25000, 50000, 100000, 200000)) +
+  scale_colour_brewer(name = "Platform", palette = "Dark2", aesthetics = c("fill", "colour")) +
+  labs(y = "Total Unique Taxa", x = "Number of Reads") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        panel.grid.minor = element_blank()) 
+
+f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_total-taxa.png")
+
+# repeat with no MGX 
+rarecurve_total %>% 
+dplyr::filter(num_samples > 21) %>% 
+  dplyr::filter(ranks != "Kingdom") %>% 
+  dplyr::filter(analysis != "MGX") %>% 
+  ggplot(aes(x = sampling_depth, y = num_taxa, colour = analysis)) +
+  geom_point() +
+  facet_wrap(~ranks, scales = "free_y") + 
+  scale_x_sqrt(labels = scales::label_number(scale_cut = cut_long_scale()), 
+               breaks = c(0, 25000, 50000, 100000, 200000)) +
+  scale_colour_brewer(name = "Platform", palette = "Dark2", aesthetics = c("fill", "colour")) +
+  labs(y = "Total Unique Taxa", x = "Number of Reads") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        panel.grid.minor = element_blank()) 
+
+f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_total-taxa_amplicon.png")
+
 ```
 
 ## Alpha Diversity Metrics
