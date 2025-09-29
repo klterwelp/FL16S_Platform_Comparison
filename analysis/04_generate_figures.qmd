@@ -360,7 +360,7 @@ tidy_rare <- rarecurve(as.data.frame(t(otu_table(all_ps_count))), step = 1000, t
 tidy_rare <- tidy_rare %>%
   separate(Site, into = c("part1", "part2", "analysis"), sep = "\\.", remove = FALSE) %>%
   mutate(sampleID = paste(part1, part2, sep = ".")) %>%
-  select(-part1, -part2)  # Optional: drop intermediate columns
+  select(-part1, -part2)  # drop intermediate columns
 ```
 
 ```{r}
