@@ -30,10 +30,14 @@ platform_pal <- palette.colors(palette = "Dark2")[1:3]
 
 ## Rarefaction Curve
 
+### At species level: 
+
 ```{r}
 # rarecurve
 set.seed(123)
-tidy_rare <- rarecurve(as.data.frame(t(otu_table(all_ps_count))), step = 1000, tidy = TRUE)
+# convert to species level, for species level rarecurve
+all_ps_species <- all_ps_count %>% f_plot_prep_phyloseq(min_prev = 1, counts = TRUE)
+tidy_rare <- rarecurve(as.data.frame(t(otu_table(all_ps_species))), step = 1000, tidy = TRUE)
 
 tidy_rare <- tidy_rare %>%
   separate(Site, into = c("part1", "part2", "analysis"), sep = "\\.", remove = FALSE) %>%
@@ -46,24 +50,18 @@ tidy_rare <- tidy_rare %>%
                               analysis == "V1V3" ~ "V1-V3",
                               .default = analysis)) %>% 
   mutate(analysis = factor(analysis, levels = c("MGX", "FL-16S", "V1-V3")))
+
+tidy_rare <- tidy_rare %>% 
+  group_by(analysis, Sample) %>% 
+  mutate(med_species = median(Species), 
+         num_samples = n_distinct(sampleID))
+
 # fixing labels
 analysis_labs <- c("V1-V3", "FL-16S", "Metagenomics")
 names(analysis_labs) <- c("V1-V3", "FL-16S", "MGX")
 ```
 
 ```{r}
-# base rarefaction plot 
-tidy_rare %>% 
-  ggplot(aes(x = Sample, y = Species, color = analysis)) +
-  geom_point(size = 0.5) + 
-  scale_x_sqrt()
-
-# now with median number of species per sample
-tidy_rare <- tidy_rare %>% 
-  group_by(analysis, Sample) %>% 
-  mutate(med_species = median(Species), 
-         num_samples = n_distinct(sampleID))
-
 # filtering to only get medians where at least 1/2 of the samples remain 
 options(scipen = 999) # no scientific notation
 tidy_rare %>% 
@@ -79,14 +77,98 @@ f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_median_specie
 
 ```
 
-I'm not sure if this is actually the "Species" level or just the OTU/ASV level.
+### At OTU/ASV level: 
 
-## Richness across Taxonomic Levels 
-
-What about doing a plot similar to the rarecurve, but for each taxonomic level?
+*in this case, metagenomics is still at species-level because sequences are not amplicon.*
 
 ```{r}
+# rarecurve
+set.seed(123)
+# convert to ASV level, for ASV level rarecurve
+all_ps_species <- all_ps_count %>% f_plot_prep_phyloseq(min_prev = 1, counts = TRUE, tax_select = c(1:7, 9), rank = "ASV")
+tidy_rare <- rarecurve(as.data.frame(t(otu_table(all_ps_species))), step = 1000, tidy = TRUE)
 
+tidy_rare <- tidy_rare %>%
+  separate(Site, into = c("part1", "part2", "analysis"), sep = "\\.", remove = FALSE) %>%
+  mutate(sampleID = paste(part1, part2, sep = ".")) %>%
+  select(-part1, -part2)  # drop intermediate columns
+
+# fix the analysis column to be a factor with levels 
+tidy_rare <- tidy_rare %>% 
+  mutate(analysis = case_when(analysis == "FL" ~ "FL-16S",
+                              analysis == "V1V3" ~ "V1-V3",
+                              .default = analysis)) %>% 
+  mutate(analysis = factor(analysis, levels = c("MGX", "FL-16S", "V1-V3")))
+
+tidy_rare <- tidy_rare %>% 
+  group_by(analysis, Sample) %>% 
+  mutate(med_species = median(Species), 
+         num_samples = n_distinct(sampleID))
+```
+
+```{r}
+# filtering to only get medians where at least 1/2 of the samples remain 
+options(scipen = 999) # no scientific notation
+tidy_rare %>% 
+  filter(num_samples > 21) %>% 
+  ggplot(aes(x = Sample, y = med_species, color = analysis))+
+  geom_point() +
+  labs(y = "Median ASVs per Sample", x = "Number of Reads") + 
+  theme_minimal() +
+  scale_x_sqrt(labels = scales::comma, breaks = c(0, 25000, 50000, 100000, 200000)) +
+  scale_colour_brewer(name = "Platform", palette = "Dark2", aesthetics = c("fill", "colour"))
+
+f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_median_asv.png")
+```
+
+### At genus level 
+
+```{r}
+# rarecurve
+set.seed(123)
+# convert to genus level, for genus level rarecurve
+all_ps_species <- all_ps_count %>% f_plot_prep_phyloseq(min_prev = 1, counts = TRUE, tax_select = c(1:7, 9), rank = "Genus")
+tidy_rare <- rarecurve(as.data.frame(t(otu_table(all_ps_species))), step = 1000, tidy = TRUE)
+
+tidy_rare <- tidy_rare %>%
+  separate(Site, into = c("part1", "part2", "analysis"), sep = "\\.", remove = FALSE) %>%
+  mutate(sampleID = paste(part1, part2, sep = ".")) %>%
+  select(-part1, -part2)  # drop intermediate columns
+
+# fix the analysis column to be a factor with levels 
+tidy_rare <- tidy_rare %>% 
+  mutate(analysis = case_when(analysis == "FL" ~ "FL-16S",
+                              analysis == "V1V3" ~ "V1-V3",
+                              .default = analysis)) %>% 
+  mutate(analysis = factor(analysis, levels = c("MGX", "FL-16S", "V1-V3")))
+
+tidy_rare <- tidy_rare %>% 
+  group_by(analysis, Sample) %>% 
+  mutate(med_species = median(Species), 
+         num_samples = n_distinct(sampleID))
+```
+
+```{r}
+# filtering to only get medians where at least 1/2 of the samples remain 
+options(scipen = 999) # no scientific notation
+tidy_rare %>% 
+  filter(num_samples > 21) %>% 
+  ggplot(aes(x = Sample, y = med_species, color = analysis))+
+  geom_point() +
+  labs(y = "Median Genera per Sample", x = "Number of Reads") + 
+  theme_minimal() +
+  scale_x_sqrt(labels = scales::comma, breaks = c(0, 25000, 50000, 100000, 200000)) +
+  scale_colour_brewer(name = "Platform", palette = "Dark2", aesthetics = c("fill", "colour"))
+
+f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_median_genus.png")
+```
+
+## Richness 
+
+Similar plot to the rarecurves, but instead of median per sample, get the total number of unique taxa
+
+```{r}
+all_ps_sp <- m
 ```
 
 ## Alpha Diversity Metrics
