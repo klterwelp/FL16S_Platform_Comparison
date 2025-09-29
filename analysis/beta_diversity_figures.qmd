@@ -9,13 +9,14 @@ editor: visual
 
 These plots look at the beta diversity differences across all platforms. We also quantify these differences statistically.
 
-### Plots 
+### Plots
 
 ```{r}
 # load libraries
 library(tidyverse) # work with tibbles etc
 library(phyloseq) # work with phyloseq objects
 library(microViz) # useful package for visualizations
+library(vegan) # for adonis2
 
 # set file paths
 in_path <- "../intermediates/RDS"
@@ -82,13 +83,13 @@ genus_jaccard <- f_plot_ordination_plots(ps = all_ps, min_prev = 1, min_abundanc
 # are these differences significant? 
 set.seed(123)
 # at species level 
-adonis2(formula = species_bray@dist ~ analysis + shrt_sample_dna, data = data.frame(species_bray@sam_data), permutations = 9999)
-adonis2(formula = species_jaccard@dist ~ analysis, data = data.frame(species_jaccard@sam_data), permutations = 9999)
+adonis2(formula = species_bray@dist ~ analysis + shrt_sample_dna, data = data.frame(species_bray@sam_data), permutations = 9999, by = "terms")
+adonis2(formula = species_jaccard@dist ~ analysis + shrt_sample_dna, data = data.frame(species_jaccard@sam_data), permutations = 9999, by = "terms")
 ```
 
 ```{r}
 # at genus level 
 set.seed(123)
-adonis2(formula = genus_bray@dist ~ analysis, data = data.frame(genus_bray@sam_data), permutations = 9999)
-adonis2(formula = genus_jaccard@dist ~ analysis, data = data.frame(genus_jaccard@sam_data), permutations = 9999)
+adonis2(formula = genus_bray@dist ~ analysis + shrt_sample_dna, data = data.frame(genus_bray@sam_data), permutations = 9999, by = "terms")
+adonis2(formula = genus_jaccard@dist ~ analysis + shrt_sample_dna, data = data.frame(genus_jaccard@sam_data), permutations = 9999, by = "terms")
 ```
