@@ -12,6 +12,8 @@ library(tidyverse) # work with tibbles etc
 library(phyloseq) # work with phyloseq objects
 library(microViz) # useful package for visualizations
 library(vegan) # for rarecurve
+library(scales) # to write numbers as 1K etc
+library(microbiome) # for alpha stats
 
 # set file paths
 in_path <- "../intermediates/RDS"
@@ -297,6 +299,7 @@ saveRDS(object = rarecurve_total_filt, file = "../intermediates/RDS/rarecurve_to
 # how does this look now when comparing all three? 
 rarecurve_total_filt %>% 
 dplyr::filter(num_samples > 21) %>% 
+  dplyr::filter(ranks != "ASV") %>% 
   dplyr::filter(ranks != "Kingdom") %>% 
   ggplot(aes(x = sampling_depth, y = num_taxa, colour = analysis)) +
   geom_point() +
@@ -307,9 +310,154 @@ dplyr::filter(num_samples > 21) %>%
   labs(y = "Total Unique Taxa", x = "Number of Reads") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
         panel.grid.minor = element_blank()) 
+
+# save 
+f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_total-taxa_filt-mgx-uniq-phyla.png")
 ```
 
 ## Alpha Diversity Metrics
+
+Get shannon, richness, and evenness and compare the results
+
+Do a rarecurve method to select optimal rarefaction level
+
+Then do repeated rarefaction at that level and get the median for each sample
+
+Then run anova test with "fdr" correction
+
+### Rarecurve of evenness/shannon alpha metrics 
+
+```{r}
+# 
+f_rarecurve_alpha_diversity <- function(ps, 
+                                     by = 1000,
+                                     min = 1, 
+                                     max = "default", 
+                                     replace = FALSE, 
+                                     seed = 123) {
+  if (max == "default") {
+    # get max number of sequences 
+    max_reads <- max(ps@sam_data$total_reads)
+  } else {
+    max_reads = max
+  }
+  # sampling depths
+  sampling_depths <- seq(min, max_reads, by)
+  
+  # ranks
+  ranks <- rank_names(ps)
+  
+  # function to get alpha diversity metrics 
+  create_alpha_table <- function(ps, rank) {
+      ps <- microbiome::aggregate_taxa(ps, level = rank)
+      tbl <- suppressMessages(microbiome::alpha(ps, index = c("observed", 
+                                           "evenness_pielou", 
+                                           "shannon")))
+      tbl <- tbl %>% 
+        as.data.frame() %>% 
+        rownames_to_column("shrt_names") %>% 
+        mutate(ranks = rank)
+      return(tbl)
+  }
+  # calculate all alpha tables at all ranks for all sampling depths
+  alpha_list <- lapply(sampling_depths, function(depth_val) {
+    print(paste0("processing at sampling depth: ", depth_val))
+    # rarefy phyloseq object 
+    rarefied_ps <- rarefy_even_depth(ps, 
+                          sample.size = depth_val, 
+                          rngseed = seed,  
+                          verbose = FALSE, 
+                          replace = replace)
+    # calculate alpha diversity at each rank
+    tbls <- lapply(ranks, function(rank_val) {
+      tbl <- create_alpha_table(rarefied_ps, rank_val)
+    })
+    # combine all rank values together
+    tbl <- dplyr::bind_rows(tbls)
+    tbl <- tbl %>% mutate(sampling_depth = depth_val) # add sampling depth
+    return(tbl)
+  })
+  # combine all sampling depth results
+  combined_tbl <- bind_rows(alpha_list)
+  return(combined_tbl)
+}
+```
+
+```{r}
+all_ps_count_fix <- all_ps_count
+all_ps_count_fix@tax_table <- all_ps_count_fix@tax_table[,c(2:7,9)] # skip kingdom
+alpha_rarecurve <- f_rarecurve_alpha_diversity(ps = all_ps_count_fix, min = 1, max = 200000)
+# start at 1000 because 1 will lead to NaNs 
+saveRDS(alpha_rarecurve, file = "../intermediates/RDS/rarecurve_alpha.RDS")
+```
+
+```{r}
+# lets view the results
+# add metadata to rarecurve
+alpha_rarecurve <- left_join(alpha_rarecurve, all_ps_count_fix@sam_data)
+# add extra information
+alpha_rarecurve <- alpha_rarecurve %>% 
+  group_by(analysis, sampling_depth, ranks) %>% 
+  mutate(med_shannon = median(diversity_shannon),
+         med_evenness = median(evenness_pielou),
+         med_richness = median(observed), 
+         num_samples = n_distinct(shrt_names)) %>%
+      mutate(ranks = factor(ranks, 
+                            levels = c("Kingdom", "Phylum", "Class", 
+                                       "Order", "Family", "Genus", 
+                                       "Species", "ASV"), ordered = TRUE))
+```
+
+```{r}
+# How robust are the median shannon, evenness, and richness to sampling depth? 
+alpha_rarecurve %>% 
+  dplyr::filter(num_samples > 21) %>% 
+  ggplot(aes(x = sampling_depth, y = med_shannon, colour = analysis)) +
+  geom_point() +
+  facet_grid(ranks~analysis, scales = "free") + 
+  scale_x_sqrt(labels = scales::label_number(scale_cut = cut_long_scale()), 
+               breaks = c(0, 10000, 25000, 50000, 100000, 200000)) +
+  labs(y = "Shannon", x = "Number of Reads") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        panel.grid.minor = element_blank()) 
+
+# repeat with richness, which we've seen in initial species/ASV/genus rarefaction curves
+alpha_rarecurve %>% 
+  dplyr::filter(num_samples > 21) %>% 
+  ggplot(aes(x = sampling_depth, y = med_richness, colour = analysis)) +
+  geom_point() +
+  facet_grid(ranks~analysis, scales = "free") + 
+  scale_x_sqrt(labels = scales::label_number(scale_cut = cut_long_scale()), 
+               breaks = c(0, 10000, 25000, 50000, 100000, 200000)) +
+  labs(y = "Richness", x = "Number of Reads") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        panel.grid.minor = element_blank()) 
+
+# repeat with evenness
+alpha_rarecurve %>% 
+  dplyr::filter(sampling_depth > 1) %>% 
+  dplyr::filter(num_samples > 21) %>% 
+  ggplot(aes(x = sampling_depth, y = med_evenness, colour = analysis)) +
+  geom_point() +
+  facet_grid(ranks~analysis, scales = "free") + 
+  scale_x_sqrt(labels = scales::label_number(scale_cut = cut_long_scale()), 
+               breaks = c(0, 10000, 25000, 50000, 100000, 200000)) +
+  labs(y = "Evenness", x = "Number of Reads") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        panel.grid.minor = element_blank()) 
+```
+
+The richness curve (similar the previous rarefaction curves) increases as sample size increases. In comparison, evenness decreases as sample size increases. Since Shannon is an estimate that combines richness and evenness, it's not entirely surprising that it remains stable at most of the depths measured. It is lowest at 1, but by 1001 reads it has stabilized. Based on these results, I think it's fine to rarefy somewhere between 10K-25k. I'll do 20k for my analyses. Rarefying at `15227` loses only four samples:
+
+```{r}
+all_ps_count %>% ps_filter(total_reads < 15227) %>% sample_names()
+```
+
+### Alpha Diversity metrics 
+
+```{r}
+# now let's calculate
+```
 
 ```{r}
 #  "average # of rank" and average alpha div metrics rarefying to min # of reads in ps_all_count
@@ -366,10 +514,40 @@ iter_rarefaction_uniq_rank <- function(ps, sample_size=min(sample_sums(ps)),
   return(table)
 }
 
-rare_rank <- iter_rarefaction_uniq_rank(all_ps_count_fix)
-rare_rank_10k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
-                                        sample_size = 10000)
-rare_rank_30k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
-                                        sample_size = 30000)
-```
+#rare_rank <- iter_rarefaction_uniq_rank(all_ps_count_fix)
+#rare_rank_10k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
+                                        #sample_size = 10000)
+#rare_rank_30k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
+                                        #sample_size = 30000)
 
+
+# old function
+iter_calc_alpha <- function(ps, sample_size=min(sample_sums(ps)), 
+                                       reps = 100, replace = FALSE, 
+                            rank = "Species") {
+  # create_alpha_tbl function
+  create_alpha_table <- function(ps) {
+    ps <- microbiome::aggregate_taxa(ps, level = rank)
+    tbl <- microbiome::alpha(ps, index = c("observed", 
+                                           "evenness_pielou", 
+                                           "shannon"),
+                            )
+    tbl <- tbl %>% mutate(shrt_names = rownames(tbl), rep = i)
+    return(tbl)
+  }
+  alpha_list <- map(seq_len(reps), function(i) {
+    rarefied_ps <- rarefy_even_depth(all_ps_count_fix, 
+                          sample.size = sample_size, 
+                          rngseed = i, # seed is rep # 
+                          verbose = FALSE, 
+                          replace = replace)
+    tbl <- create_alpha_table(rarefied_ps)
+  })
+  
+  combined_tbl <- list_rbind(alpha_list)
+  alpha_result <- combined_tbl %>% 
+    group_by(shrt_names) %>% 
+    summarize(across(where(is.numeric), median, na.rm = TRUE))
+  return(alpha_result)
+}
+```
