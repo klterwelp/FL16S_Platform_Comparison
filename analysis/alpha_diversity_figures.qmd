@@ -325,7 +325,7 @@ Then do repeated rarefaction at that level and get the median for each sample
 
 Then run anova test with "fdr" correction
 
-### Rarecurve of evenness/shannon alpha metrics 
+### Rarecurve of evenness/shannon alpha metrics
 
 ```{r}
 # 
@@ -453,16 +453,44 @@ The richness curve (similar the previous rarefaction curves) increases as sample
 all_ps_count %>% ps_filter(total_reads < 15227) %>% sample_names()
 ```
 
-### Repeated Rarefaction results 
+### Repeated Rarefaction results
 
 Now, I'll repeatedly rarefy (100x) at 15227 reads to generate more robust metrics
 
 ```{r}
-
+iter_calc_alpha <- function(ps, sample_size=min(sample_sums(ps)), 
+                                       reps = 1000, replace = FALSE, 
+                            rank = "Species") {
+  # create_alpha_tbl function
+  create_alpha_table <- function(ps) {
+    ps <- microbiome::aggregate_taxa(ps, level = rank)
+    tbl <- suppressMessages(microbiome::alpha(ps, index = c("observed", 
+                                           "evenness_pielou", 
+                                           "shannon")))
+    tbl <- tbl %>% mutate(shrt_names = rownames(tbl), rep = i)
+    return(tbl)
+  }
+  alpha_list <- lapply(seq_len(reps), function(i) {
+    print(i)
+    rarefied_ps <- rarefy_even_depth(all_ps_count_fix, 
+                          sample.size = sample_size, 
+                          rngseed = i, # seed is rep # 
+                          verbose = FALSE, 
+                          replace = replace)
+    tbl <- create_alpha_table(rarefied_ps)
+    return(tbl)
+  })
+  
+  combined_tbl <- dplyr::bind_rows(alpha_list)
+  return(combined_tbl)
+}
 ```
 
 ```{r}
 # now let's calculate
+rarefied_alpha <- iter_calc_alpha(all_ps_count_fix, sample_size = 15227, reps = 1000, replace = TRUE)
+
+saveRDS(rarefied_alpha, file = "../intermediates/RDS/rarefied_alpha.RDS")
 ```
 
 ```{r}
