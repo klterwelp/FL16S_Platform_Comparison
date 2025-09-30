@@ -167,8 +167,6 @@ f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_median_genus.
 
 Similar plot to the rarecurves, but instead of median per sample, get the total number of unique taxa detected
 
-I should also add "ASV" level for Jason
-
 ```{r}
 # function 
 f_rarecurve_total_counts <- function(ps, 
@@ -274,10 +272,42 @@ dplyr::filter(num_samples > 21) %>%
         panel.grid.minor = element_blank()) 
 
 f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_total-taxa_amplicon.png")
-
 ```
 
 I should repeat this, but filtering out the metagenomics phyla that are not seen in the plot
+
+```{r}
+# identify taxa to filter 
+all_ps_amp <- all_ps_count %>% ps_filter(analysis != "MGX")
+all_ps_mgx <- all_ps_count %>% ps_filter(analysis == "MGX")
+mgx_phyla <- all_ps_mgx@tax_table[, "Phylum"] %>% unique() %>% as.character()
+amp_phyla <- all_ps_amp@tax_table[, "Phylum"] %>% unique() %>% as.character()
+mgx_phyla_uniq <- setdiff(mgx_phyla, amp_phyla)
+
+# remove ASVs that have MGX unique phyla 
+all_ps_count_filt <- prune_taxa(!(tax_table(all_ps_count)[, "Phylum"] %in% mgx_phyla_uniq), 
+                                all_ps_count) 
+
+all_ps_count_filt@tax_table <- all_ps_count_filt@tax_table[,c(1:7,9)] # only these tax levels 
+rarecurve_total_filt <- f_rarecurve_total_counts(all_ps_count_filt, min = 1, max = 200001, by = 1000)
+saveRDS(object = rarecurve_total_filt, file = "../intermediates/RDS/rarecurve_total_filt-mgx-uniq-phyla.RDS")
+```
+
+```{r}
+# how does this look now when comparing all three? 
+rarecurve_total_filt %>% 
+dplyr::filter(num_samples > 21) %>% 
+  dplyr::filter(ranks != "Kingdom") %>% 
+  ggplot(aes(x = sampling_depth, y = num_taxa, colour = analysis)) +
+  geom_point() +
+  facet_wrap(~ranks, scales = "free_y") + 
+  scale_x_sqrt(labels = scales::label_number(scale_cut = cut_long_scale()), 
+               breaks = c(0, 25000, 50000, 100000, 200000)) +
+  scale_colour_brewer(name = "Platform", palette = "Dark2", aesthetics = c("fill", "colour")) +
+  labs(y = "Total Unique Taxa", x = "Number of Reads") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
+        panel.grid.minor = element_blank()) 
+```
 
 ## Alpha Diversity Metrics
 
@@ -342,3 +372,4 @@ rare_rank_10k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
 rare_rank_30k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
                                         sample_size = 30000)
 ```
+
