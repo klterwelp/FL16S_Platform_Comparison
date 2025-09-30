@@ -453,7 +453,13 @@ The richness curve (similar the previous rarefaction curves) increases as sample
 all_ps_count %>% ps_filter(total_reads < 15227) %>% sample_names()
 ```
 
-### Alpha Diversity metrics 
+### Repeated Rarefaction results 
+
+Now, I'll repeatedly rarefy (100x) at 15227 reads to generate more robust metrics
+
+```{r}
+
+```
 
 ```{r}
 # now let's calculate
