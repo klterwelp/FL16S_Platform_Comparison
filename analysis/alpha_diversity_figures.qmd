@@ -347,7 +347,7 @@ dplyr::filter(num_samples > 21) %>%
   facet_wrap(~ranks, scales = "free_y") + 
   scale_x_sqrt(labels = scales::label_number(scale_cut = cut_long_scale()), 
                breaks = c(0, 25000, 50000, 100000, 200000)) +
-  scale_colour_brewer(name = "Platform", palette = "Dark2", aesthetics = c("fill", "colour")) +
+  scale_color_manual(name = "Platform", values = platform_pal, aesthetics = c("fill", "colour")) +
   labs(y = "Total Unique Taxa", x = "Number of Reads") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
         panel.grid.minor = element_blank()) 
@@ -459,6 +459,7 @@ alpha_rarecurve %>%
   scale_x_sqrt(labels = scales::label_number(scale_cut = cut_long_scale()), 
                breaks = c(0, 10000, 25000, 50000, 100000, 200000)) +
   labs(y = "Shannon", x = "Number of Reads") +
+  scale_color_manual(name = "Platform", values = platform_pal, aesthetics = c("fill", "colour")) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
         panel.grid.minor = element_blank()) 
 
@@ -471,6 +472,7 @@ alpha_rarecurve %>%
   scale_x_sqrt(labels = scales::label_number(scale_cut = cut_long_scale()), 
                breaks = c(0, 10000, 25000, 50000, 100000, 200000)) +
   labs(y = "Richness", x = "Number of Reads") +
+  scale_color_manual(name = "Platform", values = platform_pal, aesthetics = c("fill", "colour")) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
         panel.grid.minor = element_blank()) 
 
@@ -484,6 +486,7 @@ alpha_rarecurve %>%
   scale_x_sqrt(labels = scales::label_number(scale_cut = cut_long_scale()), 
                breaks = c(0, 10000, 25000, 50000, 100000, 200000)) +
   labs(y = "Evenness", x = "Number of Reads") +
+  scale_color_manual(name = "Platform", values = platform_pal, aesthetics = c("fill", "colour")) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
         panel.grid.minor = element_blank()) 
 ```
@@ -577,7 +580,6 @@ plat.labs <- c("MGX", "FL-16S", "V1-V3")
 median_alphas_long %>% 
   ggplot(aes(x = analysis, y = value, color = analysis)) +
   facet_wrap(~Measurement, scales = "free", labeller = labeller(Measurement = alpha.labs)) +
-  scale_fill_brewer("Dark2") +
   geom_boxplot(position = position_dodge(width = 0.9)) +
   geom_point(position = position_dodge(width = 0.9)) +
   theme_bw(base_size = 14) + expand_limits(y=0) +
