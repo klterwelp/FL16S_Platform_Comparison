@@ -565,7 +565,8 @@ median_alphas_long %>%
   group_by(Measurement) %>% 
   pairwise_wilcox_test(formula = value ~ analysis, detailed = TRUE) %>% 
   adjust_pvalue(method = "fdr") %>% 
-  add_significance()
+  add_significance() %>% 
+  select(group1, group2, Measurement, estimate, p.adj, p.adj.signif)
 ```
 
 ```{r}
@@ -586,6 +587,7 @@ median_alphas_long %>%
   scale_color_manual(name = "Platform", values = platform_pal, aesthetics = c("fill", "colour")) +
   labs(x = "Platform", y = "Alpha Diversity Metric Value")
 
+f_export_plot(plot = last_plot(), out_file = "alpha_diversity_metrics_1000-bootstrap-median.png")
 ```
 
 ```{r}
