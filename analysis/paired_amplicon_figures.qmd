@@ -17,6 +17,7 @@ library(microViz) # useful phyloseq functions
 library(ggpubr) # add statistics to graphs
 library(skimr) # create summaries of dataframes (super useful!)
 library(vegan) # beta diversity analyses
+library(tidyverse) # useful 
 ```
 
 ```{r}
@@ -146,22 +147,24 @@ matched_meta %>%
 **For non-matches, what species are there?**
 
 ```{r}
-matched_meta %>% 
-  filter(query_filt_out == FALSE) %>% # remove filtered ASVs
-  filter(hit_type == "non-match") %>% 
-  select(query_asv, query_abundance, query_shrt_sample_dna, query_analysis, query_phylum) %>% 
-  distinct() %>% 
-  ggplot(aes(x = query_shrt_sample_dna, y = query_abundance, fill = query_phylum)) +
-      geom_bar(stat = "identity", position = "stack") +
-      labs(title = "Relative Abundance of unmatched ASVs",
-           x = "Sample",
-           y = "Relative Abundance") +
-      theme_minimal() +
-  facet_wrap(~query_analysis) +
+amp_ps <- all_ps_count %>% 
+  ps_filter(analysis != "MGX") 
+
+taxa <- taxa_names(amp_ps)
+match_taxa <- unique(match$query_asv)
+non_match <- taxa[!(taxa %in% match_taxa)] # filter to only non-match
+amp_ps_non_match <- prune_taxa(non_match, amp_ps) %>% 
+  f_plot_prep_phyloseq(min_prev = 1, counts = TRUE)
+
+comp_barplot(amp_ps_non_match, x = "shrt_sample_dna", n_taxa = 20, tax_level = "Species") +
+  facet_wrap(~analysis) +
   coord_flip()
+
+# the taxa that are non-matches are not particularly weird. They appear to be similar to the top taxa seen in these samples. 
 ```
 
 ```{r}
+# also as tables of counts of ASVs (rather than just abundance)
 query_taxonomy <- matched_meta %>% 
   filter(query_filt_out == FALSE) %>% # remove filtered ASVs
   select(query_asv, query_analysis, hit_type, query_kingdom, query_phylum, query_class, query_order, query_family, query_genus, query_species) %>% 
@@ -187,5 +190,5 @@ head(unmatched_v1v3, n = 10)
 ```
 
 ```{r}
-query_
+
 ```
