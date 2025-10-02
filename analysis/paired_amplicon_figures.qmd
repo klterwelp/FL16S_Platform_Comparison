@@ -27,6 +27,9 @@ cols <- c("query_asv", "query_len", "seq_asv", "seq_len", "alignment_len", "perc
 blast_v1v3 <- read_tsv("../intermediates/paired-blast-results/FL16S_paired-blast-results.tsv", col_names = cols)
 blast_fl <- read_tsv("../intermediates/paired-blast-results/V1V3_paired-blast-results.tsv", col_names = cols)
 
+# import data and common utility functions
+source("plot_utils.r", local = knitr::knit_global())
+
 # import original dada2 sequences
 v1v3path <- "../data/16S_V1-V3/dada2_seq.fasta.qza"
 flpath <- "../data/FL-16S/dada2_seq.fasta.qza"
@@ -46,17 +49,143 @@ f_filt_blast <- function(tbl) {
   filter(perc_id == 100) %>% 
   filter(alignment_len == seq_len | alignment_len == query_len) %>% 
   group_by(query_asv) %>% 
-  mutate(q_asv_matches = length(unique(seq_asv))) %>% # number of ASVs matching to query
-  group_by(seq_asv) %>% 
-  mutate(s_asv_matches = length(unique(query_asv))) %>% # number of ASVs matching to same sub 
+  mutate(num_query_matches = length(unique(seq_asv))) %>% # nASVs match query
   mutate(hit_type = "match") %>% 
     ungroup()
   return(tbl)
 }
+
+
 ```
 
 ```{r}
+# acquire match results
 match_fl <- f_filt_blast(blast_fl)
 match_v1v3 <- f_filt_blast(blast_v1v3)
+match <- bind_rows(match_fl, match_v1v3)
 ```
 
+```{r}
+# add metadata information
+# keep cols
+meta_cols <- c("Sample", "Abundance", "shrt_sample_dna", "analysis", "total_reads", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species", "ASV")
+# melt phyloseq object
+melt <- all_ps %>% 
+  ps_filter(analysis != "MGX") %>% 
+  ps_melt() %>% 
+  select(any_of(meta_cols)) %>% 
+  rename_with(tolower) %>% 
+  filter(abundance > 0) #remove nonexistant obs
+melt_query <- melt %>% 
+  rename_with(~paste0("query_", .x))
+melt_seq <- melt %>% 
+  rename_with(~paste0("seq_", .x))
+
+# combine the metadata 
+matched_meta <- full_join(match, melt_query) 
+# full join to capture the "query" asvs that are not matches 
+# or were filtered out in ps (aka in match but not melted phyloseq)
+matched_meta <- left_join(matched_meta, melt_seq)
+# left join to only get meta for sequences that matched queries
+```
+
+```{r}
+# add information related to non-matches 
+# (no identical hits from other platform)
+matched_meta <- matched_meta %>% 
+  mutate(hit_type = case_when(hit_type == "match" ~ "match", 
+                              .default = "non-match")) 
+# some ASVs were filtered out via taxonomy/decontam, these aren't in ps
+# going to save these ASV names and add a metadata col to mark these
+melt_asvs <- melt$asv %>% unique() # all asvs that were in the ps object
+matched_meta <- matched_meta %>% 
+  mutate(seq_filt_out = case_when(seq_asv %in% melt_asvs ~ FALSE, 
+                                  .default = TRUE), 
+         query_filt_out = case_when(query_asv %in% melt_asvs ~ FALSE, 
+                                    .default = TRUE))
+```
+
+### Characterizing non-matches
+
+**How many ASVs had matches in the other dataset?**
+
+```{r}
+# how many ASVs were matches for V1-V3 and FL? 
+matched_meta %>% 
+  filter(query_filt_out == FALSE) %>% # remove filtered ASVs
+  select(query_asv, query_analysis, hit_type) %>% 
+  distinct() %>% # remove duplicates
+  group_by(query_analysis, hit_type) %>% 
+  summarize(n = n()) %>% 
+  group_by(query_analysis) %>% 
+  mutate(total = sum(n), 
+         percent = n/total*100) %>% 
+  select(-total)
+```
+
+A greater proportion (\~66%) of V1-V3 ASVs have no FL-16S counterpart. In comparison, only \~54% of FL-16S ASVs have no V1-V3 counterpart.
+
+**How abundant are matches vs non-matches?**
+
+```{r}
+matched_meta %>% 
+  filter(query_filt_out == FALSE) %>% # remove filtered ASVs
+  select(query_asv, query_abundance, query_shrt_sample_dna, hit_type, query_analysis) %>% 
+  distinct() %>% 
+  ggplot(aes(x = query_shrt_sample_dna, y = query_abundance, fill = hit_type)) +
+      geom_bar(stat = "identity", position = "stack") +
+      labs(title = "Relative Abundance of matched ASVs",
+           x = "Sample",
+           y = "Relative Abundance") +
+      theme_minimal() +
+  facet_wrap(~query_analysis) +
+  coord_flip()
+
+```
+
+**For non-matches, what species are there?**
+
+```{r}
+matched_meta %>% 
+  filter(query_filt_out == FALSE) %>% # remove filtered ASVs
+  filter(hit_type == "non-match") %>% 
+  select(query_asv, query_abundance, query_shrt_sample_dna, query_analysis, query_phylum) %>% 
+  distinct() %>% 
+  ggplot(aes(x = query_shrt_sample_dna, y = query_abundance, fill = query_phylum)) +
+      geom_bar(stat = "identity", position = "stack") +
+      labs(title = "Relative Abundance of unmatched ASVs",
+           x = "Sample",
+           y = "Relative Abundance") +
+      theme_minimal() +
+  facet_wrap(~query_analysis) +
+  coord_flip()
+```
+
+```{r}
+query_taxonomy <- matched_meta %>% 
+  filter(query_filt_out == FALSE) %>% # remove filtered ASVs
+  select(query_asv, query_analysis, hit_type, query_kingdom, query_phylum, query_class, query_order, query_family, query_genus, query_species) %>% 
+  distinct()  
+  
+
+# who in FL-16S was not matched in V1-V3? 
+unmatched_fl <- query_taxonomy %>% 
+  filter(hit_type == "non-match" & query_analysis == "FL-16S") %>% 
+  group_by(query_analysis, query_genus, query_species) %>% 
+  summarise(n = n()) %>% 
+  arrange(desc(n))
+head(unmatched_fl, n = 10)
+
+# who in V1-V3 was not matched in FL-16S? 
+unmatched_v1v3 <- query_taxonomy %>% 
+  filter(hit_type == "non-match" & query_analysis == "V1-V3") %>% 
+  group_by(query_analysis, query_genus, query_species) %>% 
+  summarise(n = n()) %>% 
+  arrange(desc(n)) 
+head(unmatched_v1v3, n = 10)
+ 
+```
+
+```{r}
+query_
+```
