@@ -26,6 +26,10 @@ out_path <- "../figures"
 # set theme 
 theme_set(theme_bw()) # slightly clearer axes for facets
 
+# set colors for analysis 
+platform_pal <- palette.colors(palette = "Dark2")[1:3]
+names(platform_pal) <- c("FL-16S", "V1-V3", "MGX")
+
 # source common plot functions
 source("plot_utils.r", local = knitr::knit_global())
 
@@ -54,7 +58,8 @@ f_plot_ordination_plots <- function(ps, min_prev = 1, counts = FALSE, tax_select
     ord_plot(color = variable, 
              size = dot_size,
             auto_caption = NA) +
-    scale_colour_brewer(name = "Platform", palette = palette, aesthetics = c("fill", "colour")) 
+      scale_color_manual(name = "Platform", values = platform_pal, aesthetics = c("fill", "colour"))
+ 
   
   # export plot with named variables 
   print(plot)
