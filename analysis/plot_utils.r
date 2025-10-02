@@ -1,4 +1,6 @@
 # data for all plots
+in_path <- "../intermediates/RDS"
+all_ps_path <- file.path(in_path, "all_ps.RDS")
 all_ps <- readRDS(all_ps_path)
 
 # set up analysis variable
