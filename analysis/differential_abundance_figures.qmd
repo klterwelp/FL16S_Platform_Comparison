@@ -82,12 +82,20 @@ for (rank in ranks) {
   rank_ps <- all_ps %>% f_plot_prep_phyloseq(min_prev = 1,
                                              rank = rank)
   rank_tax <- rank_ps@tax_table %>% as.data.frame() %>% as_tibble(rownames = "feature") 
-  tsv_FL <- tsv_FL %>% mutate(rank = rank, feature = str_replace_all(feature, "\\.", " "))
-  tsv_MGX <- tsv_MGX %>% mutate(rank = rank, feature = str_replace_all(feature, "\\.", " "))
+  tsv_FL <- tsv_FL %>% mutate(rank = rank, feature = str_replace_all(feature, "\\.", " "), reference = "FL-16S")
+  tsv_MGX <- tsv_MGX %>% mutate(rank = rank, feature = str_replace_all(feature, "\\.", " "), reference = "MGX")
   tsv_FL <- left_join(tsv_FL, rank_tax)
   tsv_MGX <- left_join(tsv_MGX, rank_tax)
   significant_results <- bind_rows(significant_results, tsv_FL)
   significant_results <- bind_rows(significant_results, tsv_MGX)
 }
 
+```
+
+```{r}
+# filter to remove non-significant results
+significant_results <- significant_results %>% 
+  filter(qval < 0.05)
+
+write_csv2(x = significant_results, file = "significant_maasalin_results.csv")
 ```
