@@ -25,9 +25,11 @@ library(tidyverse) # useful
 cols <- c("query_asv", "query_len", "seq_asv", "seq_len", "alignment_len", "perc_id", "num_id", "evalue", "bitscore", "mismatch", "query_coverage", "gaps")
 
 # import blast tsvs
-blast_fl <- read_tsv("../intermediates/paired-blast-results/FL16S_paired-blast-results.tsv", col_names = cols,
+blast_fl <- read_tsv("../intermediates/paired-blast-results/FL16S_paired-blast-results.tsv",
+                     col_names = cols,
                      show_col_types = FALSE)
-blast_v1v3 <- read_tsv("../intermediates/paired-blast-results/V1V3_paired-blast-results.tsv", col_names = cols,
+blast_v1v3 <- read_tsv("../intermediates/paired-blast-results/V1V3_paired-blast-results.tsv",
+                       col_names = cols,
                        show_col_types = FALSE)
 
 # import data and common utility functions
@@ -82,6 +84,9 @@ v1v3_matches = match_v1v3$query_asv %>% n_distinct() # total V1-V3 ASVs with exa
 paste0("There are ", v1v3_matches, " V1-V3 ASVs with exact matches")
 match$query_asv %>% n_distinct() == fl_matches + v1v3_matches # should be equal
 paste0("There are a total of ", n_distinct(match$query_asv), " matches")
+
+# remove the extra variables
+rm(list = c("fl_matches", "v1v3_matches"))
 ```
 
 ```{r}
@@ -111,61 +116,221 @@ melt_seq <- melt %>%
 ps_asvs = n_distinct(melt$asv) # number of total ASVs that are in the phyloseq 
 non_match_asvs = setdiff(melt$asv, match$query_asv) %>% n_distinct() # ASVs in the melted phyloseq that are not in the match
 filt_asvs = setdiff(match$query_asv, melt$asv) %>% n_distinct() # ASVs in the matched ASVs that are not in the phyloseq (filtered out)
+int_asv_names = intersect(melt$asv, match$query_asv)
+int_asvs = int_asv_names %>% n_distinct()
+# the total match asvs minus the filtered ones should be equal to the ps asvs minus non matches
+int_asvs == n_distinct(match$query_asv) - filt_asvs
+int_asvs == ps_asvs - non_match_asvs
+paste0("There are: ", non_match_asvs, " ASVs with no matches out of ", ps_asvs, " total")
+paste0("There are: ", filt_asvs, " ASVs with matches that were filtered out")
+paste0("There are: ", int_asvs, " ASVs present in matches and were not filtered out")
 
-n_distinct(match$query_asv) - setdiff(match$query_asv, melt$asv) %>% n_distinct() == ps_asvs - setdiff(melt$asv, match$query_asv) %>% n_distinct()
+# remove these variables 
+#rm(list = c("ps_asvs", "non_match_asvs", "filt_asvs"))
 ```
 
 ```{r}
 # combine the metadata 
-matched_meta <- full_join(match, melt_query, relationship = "many-to_many") 
+matched_meta <- full_join(match, melt_query, relationship = "many-to-many") 
 # full join to capture the "query" asvs that are not matches 
-# or were filtered out in ps (aka in match but not melted phyloseq)
-matched_meta <- left_join(matched_meta, melt_seq)
-# left join to only get meta for sequences that matched queries
-
+# or were filtered out in ps (aka ASVs from dada2 that were filtered by decontam etc)
+matched_meta <- left_join(matched_meta, melt_seq, relationship = "many-to-many")
+# left join to only get metadata for sequences that matched queries
+# there will be multiple matches because metadata is for each sample, so the same ASV will match multiple samples.
 ```
 
 ```{r}
 # add information related to non-matches 
-# (no identical hits from other platform)
+# these are the ASVs that do not have exact matches in the other platform
 matched_meta <- matched_meta %>% 
   mutate(hit_type = case_when(hit_type == "match" ~ "match", 
                               .default = "non-match")) 
+# all non-match should not have values in query_len because that's from blast metadata
+matched_meta %>% filter(is.na(query_len)) %>% pull(hit_type) %>% unique() # non-match
+matched_meta %>% filter(hit_type == "non-match") %>% pull(query_len) %>% unique() # NA
+
+# we know from our setdiff that there are 2738 ASVs with no matches and 2231 matches
+matched_meta %>% filter(hit_type == "non-match") %>% pull(query_asv) %>% n_distinct() == 2738
+matched_meta %>% filter(hit_type == "match") %>% pull(query_asv) %>% n_distinct() == 2231
+# what proportion of non-matches are V1-V3 vs FL
+matched_meta %>% 
+  filter(hit_type == "non-match") %>%
+  select(query_asv, query_analysis) %>% 
+  distinct() %>% 
+  pull(query_analysis) %>% 
+  table()
+```
+
+```{r}
 # some ASVs were filtered out via taxonomy/decontam, these aren't in ps
-# going to save these ASV names and add a metadata col to mark these
+# but they did have exact matches (potentially shared contamination)
+# we know there are 245 ASVs that were filtered out but had matches 
+# going to save these ASV names and add metadata cols to mark these
+# some ASVs may always match with these filtered out ASVs, these will be marked too
+# always_filt_pair are query asvs that lack any query-seq pairs that aren't filt out
+# inherently this includes the 245 ASVs, but may also include other query ASVs (200 other)
 melt_asvs <- melt$asv %>% unique() # all asvs that were in the ps object
 matched_meta <- matched_meta %>% 
-  mutate(seq_filt_out = case_when(seq_asv %in% melt_asvs ~ FALSE, 
+  mutate(seq_filt_out = case_when(is.na(seq_asv) ~ NA, 
+                                  seq_asv %in% melt_asvs ~ FALSE, 
                                   .default = TRUE), 
-         query_filt_out = case_when(query_asv %in% melt_asvs ~ FALSE, 
-                                    .default = TRUE))
-
-# add in whether matches are in the same sample or not
-# and whether the species are the same for a given match
-# and whether the query species was identified when matched sequence could not identify to species-level
-matched_meta <- matched_meta %>% 
-  ungroup() %>% 
-  mutate(same_sample = case_when(query_shrt_sample_dna == seq_shrt_sample_dna ~ TRUE,
+         query_filt_out = case_when(is.na(query_asv) ~ NA,
+                                    query_asv %in% melt_asvs ~ FALSE, 
+                                    .default = TRUE)) %>% 
+  group_by(query_asv, seq_asv) %>% 
+  mutate(filt_out_pair = case_when(seq_filt_out | query_filt_out ~ TRUE,
                                    .default = FALSE)) %>% 
+  ungroup() %>% 
   group_by(query_asv) %>% 
-  mutate(
-    same_species = case_when(
-      is.na(query_species) | is.na(seq_species) ~ NA, 
-      all(query_species == seq_species) ~ TRUE,
-      !all(query_species == seq_species) ~ FALSE),
-    better_species = case_when(
-      all(is.na(query_species), any(!is.na(seq_species))) ~ FALSE,
-      all(!is.na(query_species), all(is.na(seq_species)) ~ TRUE)
-      
-      
-    ))
-# how many unique species are identified in the matched ASV? 
+  mutate(always_filt_pair = case_when(hit_type != "match" ~ NA, 
+                                      any(!filt_out_pair) ~ FALSE, 
+                                      .default = TRUE))
+         
+                                   
+# checking that only 245 unique seq and query asvs are marked as filtered out
+matched_meta %>% 
+  filter(seq_filt_out == TRUE) %>% 
+  pull(seq_asv) %>% 
+  n_distinct() == 245
+matched_meta %>% 
+  filter(query_filt_out == TRUE) %>% 
+  pull(seq_asv) %>% 
+  n_distinct() == 245
+
+# there should also be 1986 ASVs with matches that weren't filtered out 
+matched_meta %>% 
+  filter(hit_type == "match") %>% 
+  filter(query_filt_out == FALSE) %>% 
+  pull(query_asv) %>% 
+  n_distinct() == 1986
+
+matched_meta %>% 
+  filter(hit_type == "match") %>% 
+  filter(seq_filt_out == FALSE) %>% 
+  pull(seq_asv) %>% 
+  n_distinct() == 1986
+
+# what happens when I look at ASVs that aren't in a filt_out_pair 
+always_filt_asvs = matched_meta %>% 
+  filter(hit_type == "match") %>% 
+  filter(always_filt_pair == TRUE) %>% 
+  pull(query_asv) %>% unique()
+
+# how many of these are not ASVs that were filtered out
+filt_asvs = setdiff(match$query_asv, melt$asv)
+setdiff(filt_asvs, always_filt_asvs) # should be 0 because all filt asvs should always be filt
+new_filt_asvs = setdiff(always_filt_asvs, filt_asvs) 
+# these asvs are always paired with a filtered ASV in the other dataset
+# so if we add the 245 ASVs that were originally filtered + 200
+# 445 ASVs are always filtered out either from being filtered themselves or only paired w/ filt
+matched_meta %>% 
+  filter(always_filt_pair == FALSE) %>% 
+  pull(query_asv) %>% 
+  n_distinct() == 1986 - n_distinct(new_filt_asvs) 
+# leaving 1786 pairs which aren't filtered
+
+# Are there ASVs that were filtered out in both datasets
+matched_meta %>% 
+  filter(query_filt_out == TRUE & seq_filt_out == TRUE) %>% 
+  select(query_asv, query_len) %>% 
+  mutate(likely_analysis = case_when(query_len > 1000 ~ "FL-16S",
+                                     .default = "V1-V3")) %>% 
+  distinct() %>% 
+  group_by(likely_analysis) %>% 
+  summarize(n = n()) 
+# made "likely_analysis" because query_analysis isn't available w/o the metadata info
+# total of 25 ASVs were filtered out in both, 18 from FL-16S and 7 from V1-V3
+# Are there ASVs that were filtered in one dataset but not the other? 
+matched_meta %>% 
+  filter(filt_out_pair == TRUE) %>% 
+  filter(query_filt_out == FALSE) %>% # gets only query filt FALSE and seq filt TRUE 
+  select(query_asv, query_filt_out, query_analysis) %>% 
+  distinct() %>% 
+  group_by(query_filt_out, query_analysis) %>% 
+  summarize(n = n())
+# 192 FL-16S ASVs have V1-V3 matches that were filtered
+# 28 V1-V3 ASVs have FL matches that were filtered out
+# 25 ASVs that were filtered out in both
+192+28+25 == 245 # should be equal to all filtered out ASVs
+```
+
+```{r}
+# add in whether matched ASVs appear in the same sample
+# and whether a match never appears in the same sample
+# same_sample is when query sample and seq sample are the same
+# while never_same_sample is when none of the samples that the query ASV is in match the seq
+matched_meta <- matched_meta %>% 
+  mutate(same_sample = case_when(is.na(query_sample) | is.na(seq_sample) ~ NA, # can't get info
+                                 query_shrt_sample_dna == seq_shrt_sample_dna ~ TRUE,
+                                 .default = FALSE)) %>% 
+  group_by(query_asv, seq_asv) %>% # group by match pairs 
+  mutate(never_same_sample = case_when(all(is.na(same_sample)) ~ NA, # filtered/non-match
+                                       any(same_sample) ~ FALSE, # at least one match
+                                       .default = TRUE
+                                       )) %>% 
+  ungroup() %>% 
+  group_by(query_asv) %>% 
+  mutate(query_nsamples = n_distinct(unique(query_shrt_sample_dna))) %>% 
+  ungroup() %>% 
+  group_by(seq_asv) %>% 
+  mutate(seq_nsamples = n_distinct(unique(seq_shrt_sample_dna))) %>% 
+  group_by(query_asv, seq_asv) %>% 
+  mutate(query_uniq_samples = n_distinct(setdiff(c(unique(query_shrt_sample_dna)),
+                                                 c(unique(seq_shrt_sample_dna)))),
+         seq_uniq_samples = n_distinct(setdiff(c(unique(seq_shrt_sample_dna)), 
+                                               c(unique(query_shrt_sample_dna)))),
+         always_same_sample = case_when(filt_out_pair == TRUE ~ NA,
+                                        hit_type != "match" ~ NA, 
+                                        query_uniq_samples == 0 & seq_uniq_samples == 0 ~ TRUE,
+                                        .default = FALSE)) %>% 
+  ungroup()
+
+# for never_same_sample, the number of query_uniq and seq_uniq should equal nsamples
+matched_meta %>% 
+  filter(never_same_sample == TRUE) %>% 
+  select(query_asv, seq_asv, query_nsamples, seq_nsamples, query_uniq_samples, seq_uniq_samples) %>% 
+  mutate(uniq_same_nsamples_query = query_uniq_samples == query_nsamples,
+         uniq_same_nsamples_seq = seq_uniq_samples == seq_nsamples) %>% 
+  group_by(uniq_same_nsamples_query, uniq_same_nsamples_seq) %>% 
+  summarize(n = n())
+# always TRUE! 
+
+# how many total match pairs?
+# how may are always filtered out or never in the same sample? 
+matched_meta %>% 
+  select(query_asv, query_analysis, seq_asv, hit_type, filt_out_pair, never_same_sample, always_same_sample) %>%
+  distinct() %>% 
+  group_by(hit_type, filt_out_pair, never_same_sample) %>% 
+  summarize(n = n())
+
+# how many matches are always in the same samples? 
+matched_meta %>% 
+  select(query_asv, seq_asv, query_analysis, always_same_sample) %>% 
+  filter(always_same_sample == TRUE) %>% 
+  distinct() %>% 
+  summarize(n = n())
+# 420 pairs are always in the same sample, so majority are not always in the same sample
+```
+
+A majority of match pairs (unique combos of query_asvs and seq_asvs) are not filtered out and do appear in the same sample at least once. However a minority of pairs (420) always appear in the same samples. Most of the time, they appear in some of the same samples.
+
+```{r}
+# add information on the number of unique species matches per query ASV
 matched_meta <- matched_meta %>% 
   group_by(query_asv) %>% 
   mutate(num_species_matches = n_distinct(seq_species)) %>% 
   ungroup()
-  
-
+# also whether for a given pair, they are the same species who identified better
+matched_meta <- matched_meta %>% 
+  group_by(query_asv, seq_asv) %>% 
+  mutate(same_species_pair = case_when(is.na(query_species) | is.na(seq_species) ~ NA, 
+                                  query_species == seq_species ~ TRUE, 
+                                  .default = FALSE)) %>% 
+  mutate(better_species_pair = case_when(is.na(query_species) & is.na(seq_species) ~ "both_na",
+                                         is.na(query_species) & !is.na(seq_species) ~ "seq", 
+                                         !is.na(query_species) & is.na(seq_species) ~ "query",
+                                         .default =  "both_species")) %>% 
+  ungroup() 
 ```
 
 ### Characterizing non-matches
@@ -324,6 +489,16 @@ matched_meta %>%
   unique() %>% 
   quantile()
 
+matched_meta %>% 
+  filter(query_analysis == "V1-V3") %>% 
+  filter(hit_type == "match") %>% 
+  filter(always_filt_pair == FALSE) %>% 
+  select(query_asv, hit_type, num_species_matches, num_query_matches) %>% 
+  distinct() %>% 
+  ggplot(aes(x = as.factor(num_species_matches), y = num_query_matches)) +
+  geom_violin() + 
+  geom_jitter()
+
 # no point to do FL-16S because it'll be 1 species per 1 ASV that matches
 ```
 
@@ -354,14 +529,14 @@ same_sample_matches <- same_sample_matches %>%
 # removes non-matches and matches in different samples 
 # and removes matches where one ASV is present and the other is not
 plot_data <- same_sample_matches %>%
-  select(query_asv, query_shrt_sample_dna, seq_abundance, seq_abundance_corrected, query_abundance_corrected, query_analysis, same_species) %>% 
+  select(query_asv, query_shrt_sample_dna, seq_abundance, seq_abundance_corrected, query_abundance_corrected, query_analysis, same_species_pair) %>% 
   distinct()
 
 
 plot_data %>% 
   filter(query_analysis == "FL-16S") %>% # no reason to have a reflected plot
   ggplot(aes(x=query_abundance_corrected, y=seq_abundance_corrected)) +
-  geom_point(aes(color = same_species)) +
+  geom_point(aes(color = same_species_pair)) +
   scale_alpha(guide = "none") +
   geom_abline() +
   theme_minimal() +
@@ -375,13 +550,13 @@ f_export_plot(plot = last_plot(), out_file = "../figures/match-abundance-correla
 
 # how does this compare to an uncorrected graph? 
 uncor_plot_data <- same_sample_matches %>%
-  select(query_asv, query_shrt_sample_dna, seq_abundance, query_abundance, query_analysis, same_species) %>% 
+  select(query_asv, query_shrt_sample_dna, seq_abundance, query_abundance, query_analysis, same_species_pair) %>% 
   distinct() 
 
 uncor_plot_data %>% 
   filter(query_analysis == "FL-16S") %>% # no reason to have a reflected plot
   ggplot(aes(x=seq_abundance, y=query_abundance)) +
-  geom_point(aes(color = same_species)) +
+  geom_point(aes(color = same_species_pair)) +
   scale_alpha(guide = "none") +
   geom_abline() +
   theme_minimal() +
@@ -411,16 +586,16 @@ What proportion of species calls are the same vs different vs na?
 ```{r}
 species_calls <- matched_meta %>% 
   filter(hit_type == "match") %>% 
-  filter(query_filt_out == FALSE) %>% # remove filtered ASVs
-  select(query_asv, seq_asv, query_analysis, same_species, better_species) %>% 
+  filter(query_filt_out == FALSE & seq_filt_out == FALSE) %>% # remove filtered ASVs
+  select(query_asv, seq_asv, query_analysis, same_species_pair) %>% 
   distinct()
 
 # proportion of same species calls 
 species_calls %>% 
-  filter(!is.na(same_species)) %>% 
-  select(query_asv, seq_asv, query_analysis, same_species) %>% 
+  filter(!is.na(same_species_pair)) %>% 
+  select(query_asv, seq_asv, query_analysis, same_species_pair) %>% 
   distinct() %>% 
-ggplot(aes(x = query_analysis, fill = same_species)) +
+ggplot(aes(x = query_analysis, fill = same_species_pair)) +
   geom_bar()
 ```
 
@@ -431,19 +606,19 @@ A greater proportion of ASV matches are considered the same species across both 
 species_calls <- matched_meta %>% 
   filter(hit_type == "match") %>% 
   filter(query_filt_out == FALSE) %>% # remove filtered ASVs
-  select(query_asv, seq_asv, query_analysis, query_species, seq_species, same_species, better_species) %>% 
+  select(query_asv, seq_asv, query_analysis, query_species, seq_species, same_species_pair) %>% 
   distinct() %>% 
   group_by(query_asv) %>% 
-  mutate(same_species_by_query = case_when(
+  mutate(same_species_pair_by_query = case_when(
     any(c(is.na(query_species), is.na(seq_species))) ~ NA, 
     all(query_species == seq_species) ~ TRUE,
     !all(query_species == seq_species) ~ FALSE))
 
 # proportion of same species calls 
 species_calls %>% 
-  select(query_analysis, same_species_by_query) %>% 
+  select(query_analysis, same_species_pair_by_query) %>% 
   distinct() %>% 
-ggplot(aes(x = query_analysis, fill = same_species_by_query)) +
+ggplot(aes(x = query_analysis, fill = same_species_pair_by_query)) +
   geom_bar()
 
 # now only few query ASVs have false same species, instead there's a greater proportion of NA calls. This motivates further investigation and I will continue adjusting my definitions. 
@@ -476,8 +651,8 @@ species_calls %>%
   filter(!is.na(better_species)) %>% 
   select(query_asv, query_analysis, better_species) %>% 
   distinct() %>% 
-ggplot(aes(x = query_analysis, fill = better_species)) +
-  geom_bar()
+  group_by(query_analysis, better_species) %>% 
+  summarize(n = n())
 ```
 
 This is very interesting, for the ASVs which were not NA for both platforms, proportionally half of V1-V3 and FL16S had either better species identification or not. The biggest proportion is where both fail to classify the ASV to species level.
@@ -489,8 +664,4 @@ melt %>%
   distinct() %>% 
   group_by(analysis) %>% 
   summarise(n = n(), classified = sum(!is.na(species)), proportion = classified/n) 
-```
-
-```{r}
-
 ```
