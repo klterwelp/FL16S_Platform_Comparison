@@ -1,0 +1,93 @@
+---
+title: "Differential Abundance"
+author: "Kat Terwelp"
+format: html
+editor: visual
+---
+
+## Differential Abundance Figures
+
+Identify taxa that are differentially abundant between platforms.
+
+```{r}
+# load libraries
+library(phyloseq) # for working with phyloseq objects
+library(qiime2R) # import qza files
+library(microViz) # useful phyloseq functions
+library(ggpubr) # add statistics to graphs
+library(skimr) # create summaries of dataframes (super useful!)
+library(vegan) # beta diversity analyses
+library(tidyverse) # useful 
+library(Maaslin2) # for differential abundance
+```
+
+```{r}
+# load data 
+source("plot_utils.r", local = knitr::knit_global())
+ranks <- rank_names(all_ps)[2:7]
+```
+
+```{r}
+for (rank in ranks) {
+  # set up phyloseq aggregated at rank
+  rank_ps <- all_ps %>% f_plot_prep_phyloseq(min_prev = 1,
+                                             rank = rank)
+  meta <- rank_ps@sam_data %>% data.frame()
+  otu <- rank_ps@otu_table %>% data.frame()
+  
+  fit_data <- Maaslin2(
+    input_data = otu, 
+    input_metadata = meta, 
+    output = paste0(rank,"-MGX-ref"), 
+    fixed_effects = "analysis",
+    random_effects = "shrt_sample_dna",
+    reference = "analysis,MGX",
+    min_prevalence = 0.2,
+    normalization = "NONE")
+  
+  fit_data <- Maaslin2(
+    input_data = otu, 
+    input_metadata = meta, 
+    output = paste0(rank,"-FL16S-ref"), 
+    fixed_effects = "analysis",
+    random_effects = "shrt_sample_dna",
+    reference = "analysis,FL-16S",
+    min_prevalence = 0.2,
+    normalization = "NONE")
+}
+```
+
+```{r}
+rank = "Species"
+  path_FL_ref <- paste0(rank,"-FL16S-ref/significant_results.tsv")
+  path_MGX_ref <- paste0(rank,"-MGX-ref/significant_results.tsv")
+tsv_FL <- read_tsv(path_FL_ref)
+rank_ps <- all_ps %>% f_plot_prep_phyloseq(min_prev = 1,
+                                             rank = rank)
+rank_tax <- rank_ps@tax_table %>% as.data.frame() %>% as_tibble(rownames = "feature") 
+tsv_FL <- tsv_FL %>% mutate(rank = rank, feature = str_replace_all(feature, "\\.", " "))
+tsv_FL <- left_join(tsv_FL, rank_tax)
+
+```
+
+```{r}
+significant_results <- tibble()
+for (rank in ranks) {
+  path_FL_ref <- paste0(rank,"-FL16S-ref")
+  path_MGX_ref <- paste0(rank,"-MGX-ref")
+  path_FL_ref <- paste0(rank,"-FL16S-ref/significant_results.tsv")
+  path_MGX_ref <- paste0(rank,"-MGX-ref/significant_results.tsv")
+  tsv_FL <- read_tsv(path_FL_ref)
+  tsv_MGX <- read_tsv(path_MGX_ref)
+  rank_ps <- all_ps %>% f_plot_prep_phyloseq(min_prev = 1,
+                                             rank = rank)
+  rank_tax <- rank_ps@tax_table %>% as.data.frame() %>% as_tibble(rownames = "feature") 
+  tsv_FL <- tsv_FL %>% mutate(rank = rank, feature = str_replace_all(feature, "\\.", " "))
+  tsv_MGX <- tsv_MGX %>% mutate(rank = rank, feature = str_replace_all(feature, "\\.", " "))
+  tsv_FL <- left_join(tsv_FL, rank_tax)
+  tsv_MGX <- left_join(tsv_MGX, rank_tax)
+  significant_results <- bind_rows(significant_results, tsv_FL)
+  significant_results <- bind_rows(significant_results, tsv_MGX)
+}
+
+```
