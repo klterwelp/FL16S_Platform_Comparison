@@ -18,6 +18,7 @@ library(ggpubr) # add statistics to graphs
 library(skimr) # create summaries of dataframes (super useful!)
 library(vegan) # beta diversity analyses
 library(tidyverse) # useful 
+library(ggbreak) # add axis breaks to plots 
 ```
 
 ```{r}
@@ -489,6 +490,9 @@ matched_meta %>%
   unique() %>% 
   quantile()
 
+# different ways to combine: 
+
+# violin plot
 matched_meta %>% 
   filter(query_analysis == "V1-V3") %>% 
   filter(hit_type == "match") %>% 
@@ -498,6 +502,33 @@ matched_meta %>%
   ggplot(aes(x = as.factor(num_species_matches), y = num_query_matches)) +
   geom_violin() + 
   geom_jitter()
+
+# colored bars with break
+matched_meta %>% 
+  filter(query_analysis == "V1-V3") %>% 
+  select(query_asv, hit_type, num_query_matches, num_species_matches) %>% 
+  filter(hit_type == "match") %>% 
+  distinct() %>% 
+  ggplot(aes(x = num_query_matches)) +
+  geom_histogram(binwidth = 1, aes(fill = as.factor(num_species_matches))) +
+  theme_minimal() +
+  scale_y_break(c(70, 230), scales = "free", expand = FALSE) +
+  labs(x = "Number of FL-16S ASV Matches", y = "Count of V1-V3 ASVs", 
+       fill = "Number of FL-16S Species") 
+
+# colored bars without break, facet by 1 or not 
+matched_meta %>% 
+  filter(query_analysis == "V1-V3") %>% 
+  select(query_asv, hit_type, num_query_matches, num_species_matches) %>% 
+  mutate(num_species_g1 = ifelse(num_species_matches > 1, TRUE, FALSE))
+  filter(hit_type == "match") %>% 
+  distinct() %>% 
+  ggplot(aes(x = num_query_matches)) +
+  geom_histogram(binwidth = 1, aes(fill = as.factor(num_species_matches))) +
+  theme_minimal() +
+  scale_y_break(c(70, 230), scales = "free", expand = FALSE) +
+  labs(x = "Number of FL-16S ASV Matches", y = "Count of V1-V3 ASVs", 
+       fill = "Number of FL-16S Species") 
 
 # no point to do FL-16S because it'll be 1 species per 1 ASV that matches
 ```
