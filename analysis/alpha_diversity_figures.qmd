@@ -343,7 +343,7 @@ alpha_rarecurve %>%
         panel.grid.minor = element_blank()) 
 ```
 
-The richness curve (similar the previous rarefaction curves) increases as sample size increases. In comparison, evenness decreases as sample size increases. Since Shannon is an estimate that combines richness and evenness, it's not entirely surprising that it remains stable at most of the depths measured. It is lowest at 1, but by 1001 reads it has stabilized. Based on these results, I think it's fine to rarefy somewhere between 10K-25k. I'll do 20k for my analyses. Rarefying at `15227` loses only four samples:
+The richness curve (similar the previous rarefaction curves) increases as sample size increases. In comparison, evenness decreases as sample size increases. Since Shannon is an estimate that combines richness and evenness, it's not entirely surprising that it remains stable at most of the depths measured. It is lowest at 1, but by 1001 reads it has stabilized. Based on these results, I think it's fine to rarefy somewhere between 10K-25k. Rarefying at `15227` loses only three samples:
 
 ```{r}
 all_ps_count %>% ps_filter(total_reads < 15227) %>% sample_names()
@@ -394,6 +394,8 @@ saveRDS(rarefied_alpha, file = "../intermediates/RDS/rarefied_alpha.RDS")
 rarefied_alpha <- left_join(rarefied_alpha, all_ps_count_fix@sam_data)
 
 # add additional columns
+# we will use the median diversity metrics (of 1000 iterations)
+# for each sample to use in kruskal-wallis + wilcoxon tests
 rarefied_alpha <- rarefied_alpha %>% 
   group_by(shrt_names) %>% 
   mutate(med_shannon = median(diversity_shannon),
@@ -401,24 +403,34 @@ rarefied_alpha <- rarefied_alpha %>%
          med_richness = median(observed))
 
 median_alphas <- rarefied_alpha %>% 
-  select(shrt_names, med_evenness,med_richness, med_shannon, shrt_sample_dna, total_reads, analysis) %>% 
+  select(shrt_names, med_evenness,
+         med_richness, med_shannon, shrt_sample_dna, 
+         total_reads, analysis) %>%
   distinct()  %>% 
   mutate(analysis = factor(analysis, levels = c("MGX", "FL-16S", "V1-V3")))
 
 
-median_alphas_long <- pivot_longer(rarefied_alpha, 
+median_alphas_long <- pivot_longer(median_alphas, 
                                    cols = c(starts_with("med_")),
                                    names_to = c("Measurement"))
 ```
+
+```{r}
+# determine if there are statistically significant differences between groups
+# uses kruskal-wallis to not assume normality 
+median_alphas_long_test %>% 
+  group_by(Measurement) %>% 
+  kruskal_test(formula = value ~ analysis) 
+```
+
+All diversity metrics (evenness, richness, and shannon diversity) are significantly different for all groups. Evenness is less significant than the other two measurements.
 
 ```{r}
 # statistics results using wilcox test 
 median_alphas_long %>% 
   group_by(Measurement) %>% 
   pairwise_wilcox_test(formula = value ~ analysis, detailed = TRUE) %>% 
-  adjust_pvalue(method = "fdr") %>% 
-  add_significance() %>% 
-  select(group1, group2, Measurement, estimate, p.adj, p.adj.signif)
+  add_significance()
 ```
 
 ```{r}
@@ -440,99 +452,6 @@ median_alphas_long %>%
   labs(x = "Platform", y = "Alpha Diversity Metric Value")
 
 f_export_plot(plot = last_plot(), out_file = "alpha_diversity_metrics_1000-bootstrap-median.png")
-```
-
-```{r}
-#  "average # of rank" and average alpha div metrics rarefying to min # of reads in ps_all_count
-
-# inputs: 
-# ps = phyloseq object to rarefy
-# rep = number of times to rarefy, rep iteration will be the seed 
-# sample_size = rarefaction depth
-# replace = No (theoretically better to sample w/o replacement ~ cameron et al 2021 )
-# trimOTUs = TRUE 
-# rarefy-even-depth(sample.size, rngseed, replace = FALSE, trimOTUs = TRUE)
-
-# set up phyloseq object
-all_ps_count_fix <- all_ps_count
-all_ps_count_fix@tax_table <- all_ps_count_fix@tax_table[,1:7]
-
-iter_rarefaction_uniq_rank <- function(ps, sample_size=min(sample_sums(ps)), 
-                                       reps = 100, replace = FALSE) {
-  # function to get length of taxa
-  uniq_num_taxa <- function(ps, rank) {
-    num_taxa <- length(get_taxa_unique(ps, rank))
-  }
-  # initiate table 
-  table <- tibble() 
-  for (i in seq(reps)) {
-    print(paste0("Processing ", i, "/", reps, "..."))
-    # initiate table for rep
-    table_i <- expand.grid(rep = i, 
-                           ranks = rank_names(ps), 
-                           analysis = c("MGX", "FL-16S", "V1-V3"))
-    # rarefy ps 
-    rare_ps <- rarefy_even_depth(ps, 
-                          sample.size = sample_size, 
-                          rngseed = i, # seed is rep # 
-                          verbose = FALSE, 
-                          replace = replace)
-    # filter ps by analysis
-    rare_ps_mgx <- ps_filter(rare_ps, analysis == "MGX")
-    rare_ps_v1v3 <- ps_filter(rare_ps, analysis == "V1-V3")
-    rare_ps_fl <- ps_filter(rare_ps, analysis == "FL-16S")
-    # fill otu rarefied table
-    table_i <- table_i %>% 
-      rowwise() %>% 
-      mutate(num_taxa = case_when(
-        analysis == "MGX" ~ uniq_num_taxa(rare_ps_mgx, ranks),
-        analysis == "V1-V3" ~ uniq_num_taxa(rare_ps_v1v3, ranks),
-        analysis == "FL-16S" ~ uniq_num_taxa(rare_ps_fl, ranks))) %>%
-      mutate(ranks = factor(ranks, 
-                            levels = c("Kingdom", "Phylum", "Class", 
-                                       "Order", "Family", "Genus", 
-                                       "Species"), ordered = TRUE))
-    table <- bind_rows(table, table_i)
-  }
-  return(table)
-}
-
-#rare_rank <- iter_rarefaction_uniq_rank(all_ps_count_fix)
-#rare_rank_10k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
-                                        #sample_size = 10000)
-#rare_rank_30k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
-                                        #sample_size = 30000)
-
-
-# old function
-iter_calc_alpha <- function(ps, sample_size=min(sample_sums(ps)), 
-                                       reps = 100, replace = FALSE, 
-                            rank = "Species") {
-  # create_alpha_tbl function
-  create_alpha_table <- function(ps) {
-    ps <- microbiome::aggregate_taxa(ps, level = rank)
-    tbl <- microbiome::alpha(ps, index = c("observed", 
-                                           "evenness_pielou", 
-                                           "shannon"),
-                            )
-    tbl <- tbl %>% mutate(shrt_names = rownames(tbl), rep = i)
-    return(tbl)
-  }
-  alpha_list <- map(seq_len(reps), function(i) {
-    rarefied_ps <- rarefy_even_depth(all_ps_count_fix, 
-                          sample.size = sample_size, 
-                          rngseed = i, # seed is rep # 
-                          verbose = FALSE, 
-                          replace = replace)
-    tbl <- create_alpha_table(rarefied_ps)
-  })
-  
-  combined_tbl <- list_rbind(alpha_list)
-  alpha_result <- combined_tbl %>% 
-    group_by(shrt_names) %>% 
-    summarize(across(where(is.numeric), median, na.rm = TRUE))
-  return(alpha_result)
-}
 ```
 
 ## Obsolete Graphs
@@ -726,4 +645,97 @@ dplyr::filter(num_samples > 21) %>%
 f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_total-taxa_filt-mgx-uniq-phyla.png")
 ```
 
-## 
+### Alpha Diversity old functions
+
+```{r}
+#  "average # of rank" and average alpha div metrics rarefying to min # of reads in ps_all_count
+
+# inputs: 
+# ps = phyloseq object to rarefy
+# rep = number of times to rarefy, rep iteration will be the seed 
+# sample_size = rarefaction depth
+# replace = No (theoretically better to sample w/o replacement ~ cameron et al 2021 )
+# trimOTUs = TRUE 
+# rarefy-even-depth(sample.size, rngseed, replace = FALSE, trimOTUs = TRUE)
+
+# set up phyloseq object
+all_ps_count_fix <- all_ps_count
+all_ps_count_fix@tax_table <- all_ps_count_fix@tax_table[,1:7]
+
+iter_rarefaction_uniq_rank <- function(ps, sample_size=min(sample_sums(ps)), 
+                                       reps = 100, replace = FALSE) {
+  # function to get length of taxa
+  uniq_num_taxa <- function(ps, rank) {
+    num_taxa <- length(get_taxa_unique(ps, rank))
+  }
+  # initiate table 
+  table <- tibble() 
+  for (i in seq(reps)) {
+    print(paste0("Processing ", i, "/", reps, "..."))
+    # initiate table for rep
+    table_i <- expand.grid(rep = i, 
+                           ranks = rank_names(ps), 
+                           analysis = c("MGX", "FL-16S", "V1-V3"))
+    # rarefy ps 
+    rare_ps <- rarefy_even_depth(ps, 
+                          sample.size = sample_size, 
+                          rngseed = i, # seed is rep # 
+                          verbose = FALSE, 
+                          replace = replace)
+    # filter ps by analysis
+    rare_ps_mgx <- ps_filter(rare_ps, analysis == "MGX")
+    rare_ps_v1v3 <- ps_filter(rare_ps, analysis == "V1-V3")
+    rare_ps_fl <- ps_filter(rare_ps, analysis == "FL-16S")
+    # fill otu rarefied table
+    table_i <- table_i %>% 
+      rowwise() %>% 
+      mutate(num_taxa = case_when(
+        analysis == "MGX" ~ uniq_num_taxa(rare_ps_mgx, ranks),
+        analysis == "V1-V3" ~ uniq_num_taxa(rare_ps_v1v3, ranks),
+        analysis == "FL-16S" ~ uniq_num_taxa(rare_ps_fl, ranks))) %>%
+      mutate(ranks = factor(ranks, 
+                            levels = c("Kingdom", "Phylum", "Class", 
+                                       "Order", "Family", "Genus", 
+                                       "Species"), ordered = TRUE))
+    table <- bind_rows(table, table_i)
+  }
+  return(table)
+}
+
+#rare_rank <- iter_rarefaction_uniq_rank(all_ps_count_fix)
+#rare_rank_10k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
+                                        #sample_size = 10000)
+#rare_rank_30k <- iter_rarefaction_uniq_rank(all_ps_count_fix,
+                                        #sample_size = 30000)
+
+
+# old function
+iter_calc_alpha <- function(ps, sample_size=min(sample_sums(ps)), 
+                                       reps = 100, replace = FALSE, 
+                            rank = "Species") {
+  # create_alpha_tbl function
+  create_alpha_table <- function(ps) {
+    ps <- microbiome::aggregate_taxa(ps, level = rank)
+    tbl <- microbiome::alpha(ps, index = c("observed", 
+                                           "evenness_pielou", 
+                                           "shannon"),
+                            )
+    tbl <- tbl %>% mutate(shrt_names = rownames(tbl), rep = i)
+    return(tbl)
+  }
+  alpha_list <- map(seq_len(reps), function(i) {
+    rarefied_ps <- rarefy_even_depth(all_ps_count_fix, 
+                          sample.size = sample_size, 
+                          rngseed = i, # seed is rep # 
+                          verbose = FALSE, 
+                          replace = replace)
+    tbl <- create_alpha_table(rarefied_ps)
+  })
+  
+  combined_tbl <- list_rbind(alpha_list)
+  alpha_result <- combined_tbl %>% 
+    group_by(shrt_names) %>% 
+    summarize(across(where(is.numeric), median, na.rm = TRUE))
+  return(alpha_result)
+}
+```
