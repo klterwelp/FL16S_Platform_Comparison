@@ -58,7 +58,10 @@ tidy_rare <- tidy_rare %>%
 tidy_rare <- tidy_rare %>% 
   group_by(analysis, Sample) %>% 
   mutate(med_species = median(Species), 
-         num_samples = n_distinct(sampleID))
+         num_samples = n_distinct(sampleID),
+         q1_species = quantile(Species, 0.25),
+         q3_species = quantile(Species, 0.75)) %>% 
+  ungroup()
 
 # fixing labels
 analysis_labs <- c("V1-V3", "FL-16S", "Metagenomics")
@@ -70,14 +73,29 @@ names(analysis_labs) <- c("V1-V3", "FL-16S", "MGX")
 options(scipen = 999) # no scientific notation
 tidy_rare %>% 
   filter(num_samples > 21) %>% 
-  ggplot(aes(x = Sample, y = med_species, color = analysis))+
-  geom_point() +
+  ggplot(aes(x = Sample)) +
+  geom_ribbon(aes(ymin = q1_species, ymax = q3_species, fill = analysis), alpha = 0.2) +
+  geom_line(aes(y = med_species, color = analysis), size = 1) +
   labs(y = "Median Species per Sample", x = "Number of Reads") + 
   theme_minimal() +
   scale_x_sqrt(labels = scales::comma, breaks = c(0, 25000, 50000, 100000, 200000)) +
   scale_color_manual(name = "Platform", values = platform_pal, aesthetics = c("fill", "colour"))
 
 f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_median_species.png")
+
+# repeat with only amplicon sequencing
+tidy_rare %>% 
+  filter(num_samples > 21) %>% 
+  filter(analysis != "MGX") %>% 
+  ggplot(aes(x = Sample)) +
+  geom_ribbon(aes(ymin = q1_species, ymax = q3_species, fill = analysis), alpha = 0.2) +
+  geom_line(aes(y = med_species, color = analysis), size = 1) +
+  labs(y = "Median Species per Sample", x = "Number of Reads") + 
+  theme_minimal() +
+  scale_x_sqrt(labels = scales::comma, breaks = c(0, 25000, 50000, 100000, 200000)) +
+  scale_color_manual(name = "Platform", values = platform_pal, aesthetics = c("fill", "colour"))
+
+f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_median_species_amplicon.png")
 
 ```
 
@@ -107,7 +125,10 @@ tidy_rare <- tidy_rare %>%
 tidy_rare <- tidy_rare %>% 
   group_by(analysis, Sample) %>% 
   mutate(med_species = median(Species), 
-         num_samples = n_distinct(sampleID))
+         q1_species = quantile(Species, 0.25), 
+         q3_species = quantile(Species, 0.75),
+         num_samples = n_distinct(sampleID)) %>% 
+  ungroup()
 ```
 
 ```{r}
@@ -115,8 +136,10 @@ tidy_rare <- tidy_rare %>%
 options(scipen = 999) # no scientific notation
 tidy_rare %>% 
   filter(num_samples > 21) %>% 
-  ggplot(aes(x = Sample, y = med_species, color = analysis))+
-  geom_point() +
+  filter(analysis != "MGX") %>% 
+  ggplot(aes(x = Sample)) +
+  geom_line(aes(x = Sample, y = med_species, color = analysis), size = 1) +
+  geom_ribbon(aes(ymin = q1_species, ymax = q3_species, fill = analysis), alpha = 0.2) +
   labs(y = "Median ASVs per Sample", x = "Number of Reads") + 
   theme_minimal() +
   scale_x_sqrt(labels = scales::comma, breaks = c(0, 25000, 50000, 100000, 200000)) +
@@ -149,7 +172,10 @@ tidy_rare <- tidy_rare %>%
 tidy_rare <- tidy_rare %>% 
   group_by(analysis, Sample) %>% 
   mutate(med_species = median(Species), 
-         num_samples = n_distinct(sampleID))
+         q1_species = quantile(Species, 0.25), 
+         q3_species = quantile(Species, 0.75),
+         num_samples = n_distinct(sampleID)) %>% 
+  ungroup()
 ```
 
 ```{r}
@@ -157,14 +183,29 @@ tidy_rare <- tidy_rare %>%
 options(scipen = 999) # no scientific notation
 tidy_rare %>% 
   filter(num_samples > 21) %>% 
-  ggplot(aes(x = Sample, y = med_species, color = analysis))+
-  geom_point() +
+  ggplot(aes(x = Sample)) +
+  geom_line(aes(x = Sample, y = med_species, color = analysis), size = 1) +
+  geom_ribbon(aes(ymin = q1_species, ymax = q3_species, fill = analysis), alpha = 0.2) +
   labs(y = "Median Genera per Sample", x = "Number of Reads") + 
   theme_minimal() +
   scale_x_sqrt(labels = scales::comma, breaks = c(0, 25000, 50000, 100000, 200000)) +
   scale_color_manual(name = "Platform", values = platform_pal, aesthetics = c("fill", "colour"))
 
 f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_median_genus.png")
+
+# repeat with amplicon only
+tidy_rare %>% 
+  filter(num_samples > 21) %>% 
+  filter(analysis != "MGX") %>% 
+  ggplot(aes(x = Sample)) +
+  geom_line(aes(x = Sample, y = med_species, color = analysis), size = 1) +
+  geom_ribbon(aes(ymin = q1_species, ymax = q3_species, fill = analysis), alpha = 0.2) +
+  labs(y = "Median Genera per Sample", x = "Number of Reads") + 
+  theme_minimal() +
+  scale_x_sqrt(labels = scales::comma, breaks = c(0, 25000, 50000, 100000, 200000)) +
+  scale_color_manual(name = "Platform", values = platform_pal, aesthetics = c("fill", "colour"))
+
+f_export_plot(plot = last_plot(), out_file = "../figures/rarecurve_median_genus_amplicon.png")
 ```
 
 ### Total Taxa Curves
