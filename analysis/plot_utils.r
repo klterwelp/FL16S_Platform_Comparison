@@ -4,7 +4,8 @@ all_ps_path <- file.path(in_path, "all_ps.RDS")
 all_ps <- readRDS(all_ps_path)
 
 # set up analysis variable
-all_ps <- all_ps %>% ps_mutate(analysis = factor(analysis, levels = c("MGX", "FL-16S", "V1-V3")))
+all_ps <- all_ps %>% ps_mutate(analysis = factor(
+  analysis, levels = c("MGX", "FL-16S", "V1-V3")))
 # fixing labels
 analysis_labs <- c("V1-V3", "FL-16S", "Metagenomics")
 names(analysis_labs) <- c("V1-V3", "FL-16S", "MGX")
@@ -16,7 +17,8 @@ f_relative_to_counts <- function(ps_rel) {
   otu_rel <- as(otu_table(ps_rel), "matrix") # extract matrix otu table
   otu_counts <- sweep(otu_rel, 2, total_reads, `*`) # multiply rel abx by counts
   otu_counts <- otu_counts %>% round() # round to keep whole numbers (for mgx)
-  otu_table(ps_rel) <- otu_table(otu_counts, taxa_are_rows = taxa_are_rows(ps_rel))
+  otu_table(ps_rel) <- otu_table(otu_counts,
+                                 taxa_are_rows = taxa_are_rows(ps_rel))
   return(ps_rel)
 }
 
@@ -53,3 +55,18 @@ f_export_plot <- function(plot, out_file, width = 8, height = 4, dpi = 300) {
 # converted counts data
 # generate pseudo-counts data using total_reads
 all_ps_count <- f_relative_to_counts(all_ps)
+
+# filter out CH primer for typical graphs
+# CH primer is a primer developed by our lab
+# CM is the primer typically used for V1
+# keep both primer version as separate ps
+all_ps_bothp <- all_ps
+all_ps_count_bothp <- all_ps_count
+all_ps <- all_ps %>%
+  ps_filter(is.na(v1_v3_primer) | v1_v3_primer == "CM")
+sample_names(all_ps) <- sample_names(all_ps) %>%
+  str_replace_all(".CM", "")
+all_ps_count <- all_ps_count %>%
+  ps_filter(is.na(v1_v3_primer) | v1_v3_primer == "CM")
+sample_names(all_ps_count) <- sample_names(all_ps_count) %>%
+  str_replace_all(".CM", "")

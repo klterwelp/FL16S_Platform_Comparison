@@ -62,7 +62,13 @@ out_v1v3 <- file.path(out_path, "v1v3.RDS")
 f_sample_dna <- function(sample_names) {
   sample_names %>%
     str_replace_all("-", ".") %>%
-    str_replace_all(".CH", "") # removes V1-V3 primer info from sample name
+    # removes V1-V3 primer info from sample name
+    str_replace_all(".CH", "") %>%
+    str_replace_all(".CM", "") %>%
+    # remove platform from sample name
+    str_replace_all(".V1V3", "") %>%
+    str_replace_all(".MGX", "") %>%
+    str_replace_all(".FL", "")
 }
 
 #' Shorten sample names and potentially add analysis suffix
@@ -76,7 +82,7 @@ f_shrt_names <- function(sample_names, suffix) {
   sample_names %>%
     str_replace_all("\\-", "\\.") %>% # replaces "-" with "."
     str_replace_all("\\_", "\\.") %>%  # replaces "_" with "."
-    str_replace_all(".CH", "") %>% # replaces "CH" with nothing
+    #str_replace_all(".CH", "") %>% # replaces "CH" with nothing
     str_replace_all(".INF.NPS", "") %>% # replaces ".INF.NPS" with nothing
     str_replace_all("L.", "") %>% # replaces L. with nothing
     str_c(suffix) # appends a suffix to the end of the names
@@ -249,8 +255,11 @@ mgx_ps <- prune_samples(samples = keep_names_mgx, x = mgx_ps)
 mgx_ps <- prune_taxa(taxa_sums(mgx_ps) > 0, mgx_ps)
 # prune v1v3 samples to only those that are included in FL and metagenomics
 keep_names_v1v3 <- sample_names(mgx_ps) %>%
-  str_replace_all("\\.", "-") %>%
-  str_c("-CH") #only keeping CH primer results
+  str_replace_all("\\.", "-")
+# keep both CH and CM primers
+keep_names_v1v3_ch <- keep_names_v1v3 %>% str_c("-CH")
+keep_names_v1v3_cm <- keep_names_v1v3 %>% str_c("-CM")
+keep_names_v1v3 <- c(keep_names_v1v3_ch, keep_names_v1v3_cm)
 v1v3_ps <- prune_samples(samples = keep_names_v1v3, x = v1v3_ps)
 v1v3_ps <- prune_taxa(taxa_sums(v1v3_ps) > 0, v1v3_ps)
 # prune fl samples to only those that are included in V1-V3 and metagenomics
@@ -273,9 +282,9 @@ v1v3_ps@sam_data$analysis <- "V1-V3"
 fl_ps@sam_data$analysis <- "FL-16S"
 mgx_ps@sam_data$analysis <- "MGX"
 # set up shrt_sample_dna variable
-v1v3_ps@sam_data$shrt_sample_dna <- f_shrt_names(sample_names(v1v3_ps), "")
-fl_ps@sam_data$shrt_sample_dna <- f_shrt_names(sample_names(fl_ps), "")
-mgx_ps@sam_data$shrt_sample_dna <- f_shrt_names(sample_names(mgx_ps), "")
+v1v3_ps@sam_data$shrt_sample_dna <- f_shrt_names(v1v3_ps@sam_data$sample_dna, "")
+fl_ps@sam_data$shrt_sample_dna <- f_shrt_names(fl_ps@sam_data$sample_dna, "")
+mgx_ps@sam_data$shrt_sample_dna <- f_shrt_names(mgx_ps@sam_data$sample_dna, "")
 # set up shrt_names variable
 v1v3_ps@sam_data$shrt_names <- f_shrt_names(sample_names(v1v3_ps), ".V1V3")
 fl_ps@sam_data$shrt_names <- f_shrt_names(sample_names(fl_ps), ".FL")

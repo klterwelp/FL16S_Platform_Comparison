@@ -95,7 +95,7 @@ f_update_lineage <- function(last_tax_path, lineage_path) {
 #' taxid.
 #'
 #' @returns a list of ASVs that taxonkit could not find a matching NCBI taxid
-#' for the last identified taxon. 
+#' for the last identified taxon.
 f_no_update <- function(joined_tbl) {
   no_update_str <- joined_tbl %>%
     filter(is.na(ncbi_taxid)) %>%
@@ -169,7 +169,7 @@ f_rel_transform <- function(x) {
 #' @returns `sd_all` all metadata combined using `dplyr::bind_rows`.
 f_add_metadata <- function(ps_ls) {
   keep_cols <- c("shrt_names", "old_name", "sample_dna", "shrt_sample_dna",
-                 "database", "analysis", "total_reads")
+                 "database", "analysis", "total_reads", "v1_v3_primer")
   # extract sample data as tibbles
   tib_ls <- lapply(ps_ls, function(ps) {
     sd <- sample_data(ps)
@@ -181,7 +181,7 @@ f_add_metadata <- function(ps_ls) {
       select(any_of(keep_cols))
     return(tib)
   })
-  
+
   # bind all tibbles and convert back to sample data
   tib_all <- bind_rows(tib_ls)
   sd_all <- sample_data(tib_all)
