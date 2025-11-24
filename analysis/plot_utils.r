@@ -60,13 +60,18 @@ all_ps_count <- f_relative_to_counts(all_ps)
 # CH primer is a primer developed by our lab
 # CM is the primer typically used for V1
 # keep both primer version as separate ps
+# keep copy of phyloseq objects w/ both V1-V3 primers
 all_ps_bothp <- all_ps
 all_ps_count_bothp <- all_ps_count
+# remove CH primer from all_ps + all_ps_count
 all_ps <- all_ps %>%
   ps_filter(is.na(v1_v3_primer) | v1_v3_primer == "CM")
 sample_names(all_ps) <- sample_names(all_ps) %>%
   str_replace_all(".CM", "")
+all_ps@sam_data$shrt_names <- sample_names(all_ps)
 all_ps_count <- all_ps_count %>%
   ps_filter(is.na(v1_v3_primer) | v1_v3_primer == "CM")
 sample_names(all_ps_count) <- sample_names(all_ps_count) %>%
   str_replace_all(".CM", "")
+all_ps_count@sam_data$shrt_names <- sample_names(all_ps_count)
+
