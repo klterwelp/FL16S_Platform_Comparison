@@ -503,7 +503,9 @@ post_hoc_analysis <- median_alphas_long %>%
   pairwise_wilcox_test(formula = value ~ analysis, 
                        detailed = TRUE, paired = TRUE) %>% 
   add_significance() %>%
-  add_xy_position(x = "analysis", scales = "free")
+  add_xy_position(x = "analysis", scales = "free", fun = "max", step.increase = 0)
+# potential fix: https://github.com/kassambara/rstatix/issues/56
+# I want the far-away comparison to be the highest up, also the spread of the smaller bars is not enough
 
 post_hoc_analysis %>% select(
     Measurement, estimate, group1, group2, n1, p.adj, p.adj.signif, method
@@ -527,9 +529,12 @@ median_alphas_long %>%
   theme_bw(base_size = 14) + expand_limits(y=0) +
   scale_color_manual(name = "Platform", values = platform_pal, aesthetics = c("fill", "colour")) +
   labs(x = "Platform", y = "Alpha Diversity Metric Value") + 
-  stat_pvalue_manual(post_hoc_analysis)
+  stat_pvalue_manual(post_hoc_analysis, step.increase = 0.10,
+                     bracket.nudge.y = 0.1) +
+  guides(color = "none")
+  
 
-f_export_plot(plot = last_plot(), width = 8, height = 8, out_file = "alpha_diversity_metrics_1000-bootstrap-median.png")
+f_export_plot(plot = last_plot(), width = 8, height = 4, out_file = "alpha_diversity_metrics_1000-bootstrap-median.png")
 ```
 
 ## Obsolete Graphs
