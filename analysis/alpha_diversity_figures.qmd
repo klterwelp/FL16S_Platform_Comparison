@@ -15,6 +15,7 @@ library(vegan) # for rarecurve
 library(scales) # to write numbers as 1K etc
 library(microbiome) # for alpha stats
 library(rstatix) # for anova tests
+library(ggpubr) # for publication ready graphs
 
 # set file paths
 in_path <- "../intermediates/RDS"
@@ -216,7 +217,9 @@ Do a rarecurve method to select optimal rarefaction level
 
 Then do repeated rarefaction at that level and get the median for each sample
 
-Then run anova test with "fdr" correction
+Then run kruskal-wallis test to determine differences between groups
+
+For significant differences, test pairwise differences with post-hoc wilcoxon test
 
 ### Rarecurve of evenness/shannon alpha metrics
 
@@ -346,7 +349,8 @@ alpha_rarecurve %>%
 The richness curve (similar the previous rarefaction curves) increases as sample size increases. In comparison, evenness decreases as sample size increases. Since Shannon is an estimate that combines richness and evenness, it's not entirely surprising that it remains stable at most of the depths measured. It is lowest at 1, but by 1001 reads it has stabilized. Based on these results, I think it's fine to rarefy somewhere between 10K-25k. Rarefying at `15227` loses only three samples:
 
 ```{r}
-all_ps_count %>% ps_filter(total_reads < 15227) %>% sample_names()
+filtered_samples <- all_ps_count %>% ps_filter(total_reads < 15227) %>% sample_names()
+filtered_samples
 ```
 
 ### Bootstrapped Alpha results
@@ -407,30 +411,103 @@ median_alphas <- rarefied_alpha %>%
          med_richness, med_shannon, shrt_sample_dna, 
          total_reads, analysis) %>%
   distinct()  %>% 
-  mutate(analysis = factor(analysis, levels = c("MGX", "FL-16S", "V1-V3")))
-
+  mutate(analysis = factor(analysis, levels = c("MGX", "FL-16S", "V1-V3"), ordered = TRUE))
 
 median_alphas_long <- pivot_longer(median_alphas, 
                                    cols = c(starts_with("med_")),
                                    names_to = c("Measurement"))
+# filter to remove samples that are missing a counterpart in one of the datasets
+filtered_dna <- all_ps %>% 
+  ps_filter(shrt_names %in% filtered_samples) %>% 
+  sample_data() %>% 
+  as.data.frame() %>% pull(shrt_sample_dna)
+
+median_alphas_long <- median_alphas_long %>% 
+  filter(!(shrt_sample_dna %in% filtered_dna))
+```
+
+```{r}
+# reviewing assumptions of ANOVA based on datanovia
+# https://www.datanovia.com/en/lessons/repeated-measures-anova-in-r/
+# test if our values significantly differ from normality
+# we can use an anova otherwise
+median_alphas_long %>% 
+  group_by(Measurement, analysis) %>% 
+  shapiro_test(value) %>% 
+  add_significance()
+
+# also check that we have no significant outliers
+median_alphas_long %>% 
+  group_by(Measurement, analysis) %>% 
+  identify_outliers(value)
+
+# also look at boxplots 
+median_alphas_long %>%
+  filter(Measurement == "med_evenness") %>% 
+  ggboxplot(x = "analysis", y = "value", color = "analysis", add = "point")
+
+median_alphas_long %>%
+  filter(Measurement == "med_richness") %>% 
+  ggboxplot(x = "analysis", y = "value", color = "analysis", add = "point")
+
+median_alphas_long %>%
+  filter(Measurement == "med_shannon") %>% 
+  ggboxplot(x = "analysis", y = "value", color = "analysis", add = "point")
+
+# also q-q plot alternative
+ggqqplot(median_alphas_long %>% filter(Measurement == "med_shannon"), 
+         "value", facet.by = "analysis")
+ggqqplot(median_alphas_long %>% filter(Measurement == "med_richness"), 
+         "value", facet.by = "analysis")
+ggqqplot(median_alphas_long %>% filter(Measurement == "med_evenness"), 
+         "value", facet.by = "analysis")
+```
+
+There are two extreme outliers from V1-V3 data for richness. Overall, based on the boxplots, the data doesn't look that skewed, however there are definitely some outliers. Normality assumptions for MGX's richness looks pretty violated. But, there's no alternative to non-parametric paired multi-group
+
+```{r}
+# okayish, I will do anova (but I may switch back to kruskal wallis is others disagree)
+median_alphas_long %>% 
+  group_by(Measurement) %>% 
+  anova_test(formula = value ~ analysis, wid = shrt_sample_dna)
 ```
 
 ```{r}
 # determine if there are statistically significant differences between groups
-# uses kruskal-wallis to not assume normality 
-median_alphas_long_test %>% 
+# uses kruskal-wallis to not assume normality, which based on plots may be slightly violated
+# however, kruskal wallis does not account for the fact that samples between groups are not idependent (these are paired samples across 3 groups)
+median_alphas_long %>% 
   group_by(Measurement) %>% 
-  kruskal_test(formula = value ~ analysis) 
+  kruskal_test(formula = value ~ analysis)
 ```
+
+Even with kruskal wallis (where our samples are technically not independent), the p-values are similar to ANOVA.
 
 All diversity metrics (evenness, richness, and shannon diversity) are significantly different for all groups. Evenness is less significant than the other two measurements.
 
 ```{r}
 # statistics results using wilcox test 
+# this is a post-hoc test to determine which groups are significantly different
+# using wilcox to not assume normality
+# otherwise would use a paired t-test if we are okay with the "normalish" data
 median_alphas_long %>% 
   group_by(Measurement) %>% 
-  pairwise_wilcox_test(formula = value ~ analysis, detailed = TRUE) %>% 
-  add_significance()
+  pairwise_wilcox_test(formula = value ~ analysis, detailed = TRUE, paired = TRUE) %>% 
+  add_significance() %>% 
+  select(
+    Measurement, estimate, group1, group2, n1, p.adj, p.adj.signif, method
+  )
+
+post_hoc_analysis <- median_alphas_long %>% 
+  group_by(Measurement) %>% 
+  pairwise_wilcox_test(formula = value ~ analysis, 
+                       detailed = TRUE, paired = TRUE) %>% 
+  add_significance() %>%
+  add_xy_position(x = "analysis", scales = "free")
+
+post_hoc_analysis %>% select(
+    Measurement, estimate, group1, group2, n1, p.adj, p.adj.signif, method
+  )
 ```
 
 ```{r}
@@ -449,9 +526,10 @@ median_alphas_long %>%
   geom_point(position = position_dodge(width = 0.9)) +
   theme_bw(base_size = 14) + expand_limits(y=0) +
   scale_color_manual(name = "Platform", values = platform_pal, aesthetics = c("fill", "colour")) +
-  labs(x = "Platform", y = "Alpha Diversity Metric Value")
+  labs(x = "Platform", y = "Alpha Diversity Metric Value") + 
+  stat_pvalue_manual(post_hoc_analysis)
 
-f_export_plot(plot = last_plot(), out_file = "alpha_diversity_metrics_1000-bootstrap-median.png")
+f_export_plot(plot = last_plot(), width = 8, height = 8, out_file = "alpha_diversity_metrics_1000-bootstrap-median.png")
 ```
 
 ## Obsolete Graphs
