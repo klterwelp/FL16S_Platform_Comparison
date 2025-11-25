@@ -537,6 +537,17 @@ median_alphas_long %>%
 f_export_plot(plot = last_plot(), width = 8, height = 4, out_file = "alpha_diversity_metrics_1000-bootstrap-median.png")
 ```
 
+### CH vs CM Primer Comparison
+
+```{r}
+# repeat these analyses with just the CH/CM comparisons
+all_ps_count_bothp_fix <- all_ps_count_bothp
+all_ps_count_bothp_fix@tax_table <- all_ps_count_bothp_fix@tax_table[,c(1:7,9)]
+
+rarefied_alpha <- iter_calc_alpha(all_ps_count_bothp_fix, sample_size = 15227, reps = 1000, replace = TRUE)
+
+```
+
 ## Obsolete Graphs
 
 ### Total Rarecurves
